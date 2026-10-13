@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "esModuleInterop": true, "skipLibCheck": true,
+    "noUnusedLocals": true, "noUnusedParameters": true,
+    "resolveJsonModule": true, "declaration": true, "sourceMap": true
+  },
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "supabase/**/*.ts"],
+  "exclude": ["node_modules", "**/dist/**"]
+}

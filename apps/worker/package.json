@@ -1,0 +1,13 @@
+{
+  "name": "@tastecase/worker", "version": "0.1.0", "private": true, "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "engines": { "node": ">=24.21.0 <25" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json", "test": "node --import tsx --test src/**/*.test.ts",
+    "dev": "tsx src/main.ts", "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@tastecase/contracts": "0.1.0", "@modelcontextprotocol/sdk": "1.31.0",
+    "@qloo/qloo-harness": "0.1.26", "pg": "8.16.3", "zod": "4.3.6"
+  }
+}
