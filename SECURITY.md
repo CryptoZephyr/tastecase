@@ -1,6 +1,6 @@
 # Security boundaries
 
-This is a tested local foundation, not a production security certification or hosted product.
+This is a tested foundation with a hosted Supabase verification, not a production security certification or hosted product.
 
 - Owner access tokens are verified server-side by Supabase Auth. Caller-supplied owner IDs and decoded-only JWT claims are not authentication.
 - The API checks every private project's owner. Database row-level policies and composite foreign keys add isolation and cross-project reference checks.
@@ -13,6 +13,6 @@ This is a tested local foundation, not a production security certification or ho
 - Keep `.env`, `.local`, private evidence and Qloo responses out of source control and public artifacts.
 - Do not run the local test-auth/bootstrap flow against cloud databases. Production startup has no test-verifier configuration mode.
 
-Discovery, human review, signed artifact access and historical replay are not implemented here. API/database checks are local; hosted Supabase authentication and private-object storage still need verification. This foundation has no Qloo dependency; the earlier Qloo prototype's upstream advisories remain a gate before hosting that integration.
+Discovery, human review, signed artifact access and historical replay are not implemented here. Real Supabase Auth users, hosted database RLS and composite boundaries, runner scope and private object access were verified with a loopback API and two synthetic owners. SSL enforcement was enabled for the dedicated project; the API's database connection used `sslmode=verify-full` with Supabase's published CA. Signed URLs, other MIME/size-limit behavior, a deployed API and production security have not been verified. This foundation has no Qloo dependency; the earlier Qloo prototype's upstream advisories remain a gate before hosting that integration.
 
 Report a vulnerability privately to the repository owner through an established private contact channel. Do not post credentials, private project data or an exploitable reproduction in public issues. No response-time guarantee or security audit is claimed.

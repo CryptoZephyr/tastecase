@@ -6,7 +6,7 @@ TasteCase is for the engineering and QA team, not the traveler. It tests recomme
 
 ## What works today
 
-This is the first backend-and-runner build. It has owned projects, immutable catalog/task versions, mapping confirmations, scoped runner credentials, leased target attempts and saved results. The local runner can execute an actual Nova Micro request and upload the result. It keeps target-provider credentials on the runner machine.
+This is the first backend-and-runner build. It has owned projects, immutable catalog/task versions, mapping confirmations, scoped runner credentials, leased target attempts and saved results. The local runner can execute an actual Nova Micro request and upload the result. It keeps target-provider credentials on the runner machine. A dedicated Supabase project now has the foundation schema; real hosted owner login and project/private-storage isolation have been checked with synthetic accounts.
 
 There is **no frontend or hosted demo yet**. Qloo discovery, human review, suites, comparisons and replay are still to be built. The earlier Qloo/MCP experiment established a small live contrast, not an advantage over generic test generation. Visual design is deferred.
 
@@ -36,7 +36,7 @@ Missing cultural evidence is not a negative preference. An incomplete trace cann
 |---|---|---|
 | Qloo official MCP | Find cultural contrasts within eligible restaurant options | Verified in a private integration experiment; discovery worker not yet in this repository |
 | LiteLLM / Nova Micro | Initial testing-agent choice and local sample target adapter | Real target request verified through the runner |
-| Supabase | Owner authentication, Postgres and private storage | Auth verifier and compatible migrations implemented; hosted account/storage flow not verified |
+| Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan project, migration, real account/project isolation and private-object access verified; API not deployed |
 | Fastify / Node | Persistent API and future discovery worker | Local API implemented and tested |
 | Vercel / Render | Planned web and persistent backend hosting | Not deployed |
 
@@ -57,6 +57,14 @@ Apply migrations and start the API:
 npm run db:migrate
 npm run dev:api
 ```
+
+For the dedicated hosted Supabase database, use its **actual session-pooler host** and `postgres.<project-ref>` username from Supabase, on port 5432. Set `DATABASE_URL` through the secret manager, never in this repository or a CLI argument. Require `sslmode=verify-full` in the connection string. The pooler uses Supabase's own CA, supplied here as the [public certificate](supabase/certs/prod-ca-2021.crt); from the repository root, before launching migration or API processes:
+
+```sh
+export NODE_EXTRA_CA_CERTS="$(pwd)/supabase/certs/prod-ca-2021.crt"
+```
+
+For another deployment layout, use an absolute path to this certificate in the server environment. Do not disable TLS verification. The certificate was retrieved from [Supabase's published download](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt); refresh it if Supabase rotates its CA. On 2026-10-13, the hosted migration was applied once and a repeat run applied zero migrations. The storage bucket is private; two real synthetic Supabase Auth owners could access only their own records, and cross-project/unauthenticated object reads were denied. The synthetic accounts and uploaded object were removed; labeled, isolated immutable test records remain. This was a loopback API against hosted services, **not a deployed TasteCase application**.
 
 The API currently binds to loopback only. Production owner requests are verified through Supabase Auth, not decoded JWT claims or caller-supplied owner IDs. The database connection needs the privileged migration/runtime permissions documented in [the runner guide](docs/runner.md).
 
@@ -90,7 +98,7 @@ See [runner setup and adapter contract](docs/runner.md) and [security boundaries
 
 ## Remaining work
 
-- Hosted Supabase login and actual private-object storage verification.
+- Deploy the API and verify its hosted operational and session-recovery paths.
 - Bounded Qloo discovery with coverage checks, checkpoints and recovery.
 - Human review, immutable suites, comparison, export and pinned replay.
 - Owner-approved frontend and in-app documentation.
