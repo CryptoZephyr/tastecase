@@ -54,6 +54,54 @@ function mockApi(options: { claim?: ClaimAttemptResponse | null; upload?: Respon
 function adapter(run: TargetAdapter['run'] = async () => success): TargetAdapter { return { ...metadata, run }; }
 const context = () => ({ signal: new AbortController().signal });
 
+function syntheticComparisonClaim(): ClaimAttemptResponse {
+  const ordinary = syntheticClaim();
+  return ClaimAttemptResponseSchema.parse({ ...ordinary, input: { ...ordinary.input, execution: {
+    kind: 'comparison', comparisonId: id(80), caseId: id(81), suiteVersionId: id(82),
+    suiteChecksum: 'a'.repeat(64), caseChecksum: 'b'.repeat(64), expectationVersionId: id(83),
+    expectationChecksum: 'c'.repeat(64), evidenceChecksum: 'd'.repeat(64), role: 'candidate',
+    assistantVersion: 'local-release', profileId: 'a', repeat: 0,
+  } } });
+}
+
+for (const release of [undefined, 'wrong-release', 'local-release']) {
+  test(`comparison execution requires exact local binding: ${release ?? 'unbound'}`, async () => {
+    const claim = syntheticComparisonClaim();
+    const api = mockApi({ claim });
+    const client = new RunnerClient({ env: { ...env, ...(release ? { TASTECASE_ASSISTANT_VERSION: release } : {}) }, fetch: api.fetch });
+    let calls = 0;
+    const outcome = await runOnce(client, adapter(async () => { calls++; return success; }));
+    assert.equal(outcome.status, release === 'local-release' ? 'completed' : 'failed');
+    assert.equal(calls, release === 'local-release' ? 1 : 0);
+    assert.deepEqual(api.requests[1].body, { schema_version: SCHEMA_VERSION, ...(release ? { assistantVersion: release } : {}) });
+  });
+}
+
+test('comparison pinned text containing configured local secrets is rejected, not silently redacted before execution', async () => {
+  const claim = syntheticComparisonClaim();
+  const secret = 'another-synthetic-credential';
+  claim.input.task.syntheticBrief.text = `Synthetic task containing ${secret}`;
+  const payload = Object.fromEntries(Object.entries(claim.input.task).filter(([name]) => !['projectId', 'checksum', 'createdAt'].includes(name)));
+  claim.input.task.checksum = checksum(payload);
+  const api = mockApi({ claim }); let calls = 0;
+  const client = new RunnerClient({ env: { ...env, OTHER_SECRET: secret, TASTECASE_ASSISTANT_VERSION: 'local-release' }, fetch: api.fetch });
+  const result = await runOnce(client, adapter(async () => { calls++; return success; }));
+  assert.deepEqual(result, { status: 'failed', stage: 'claim', code: 'invalid_response' });
+  assert.equal(calls, 0);
+});
+
+test('bound runner still executes ordinary discovery/foundation work without deriving a model from its label', async () => {
+  const api = mockApi();
+  const client = new RunnerClient({ env, assistantVersion: 'explicit-local-release', fetch: api.fetch });
+  assert.equal((await runOnce(client, adapter())).status, 'completed');
+});
+
+test('unsafe or blank assistant version is rejected without making claims', () => {
+  for (const assistantVersion of ['', ' release ', key, token, 'release\nlabel']) {
+    assert.throws(() => new RunnerClient({ env, assistantVersion }), { code: 'configuration_error' });
+  }
+});
+
 // API origin and credential boundaries.
 for (const url of ['https://api.example.test', 'https://api.example.test:8443/']) {
   test(`HTTPS origin accepted: ${url}`, () => assert.equal(validateEndpoint(url, { originOnly: true }).protocol, 'https:'));

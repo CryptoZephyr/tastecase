@@ -2,7 +2,7 @@
 
 The owner can accept, edit, reject or defer a saved discovery case, explain the decision and publish selected approved versions. Publishing saves the case, expectation and evidence together. Later edits, rejections or runner results cannot rewrite that suite.
 
-This is a backend API, not a finished interface. Comparison, export, replay execution and an expectation evaluator are not implemented. Approval records a person's scoped expectation; it does not prove that an assistant passed or failed it.
+This is a backend API, not a finished interface. Published versions now feed the [comparison, export and local replay service](comparison.md). Approval records a person's scoped expectation; only a later comparison evaluates it, and a policy pass does not establish universal taste correctness.
 
 ## The review boundary
 
@@ -85,4 +85,4 @@ On 2026-10-13, the full `npm run check` passed **329 tests**, zero skipped, with
 
 The new migration was applied to the dedicated hosted Supabase project over verified TLS; a repeat applied zero. A loopback API with two actual disposable Supabase Auth accounts passed **114 hosted checks**: review lifecycle, missing/partial evidence pins, stale conflicts, publication/retry/reopen, atomic multi-case selection, late results, forced owner RLS and backend-only mutation privileges. Test Auth users were deleted, credentials revoked and jobs stopped; isolated, explicitly synthetic immutable history remains. This check called no Qloo/model provider and did not establish a real human-approved taste verdict.
 
-No browser/UI, public deployment, comparison evaluator, export or replay was tested or shipped. The four Qloo/Pi dependency findings were subsequently remediated with clean-install, audit, live MCP and full-regression verification; see [dependency security](discovery.md#dependency-security). Reviewing/publishing stored synthetic cases is not proof of better discovery yield than generic generation.
+That review milestone did not include browser/UI, deployment or comparison/export/replay; the latter now has [separate Gate 4 evidence](comparison.md#verification). The four Qloo/Pi dependency findings were subsequently remediated with clean-install, audit, live MCP and full-regression verification; see [dependency security](discovery.md#dependency-security). Reviewing/publishing stored synthetic cases is not proof of better discovery yield than generic generation.

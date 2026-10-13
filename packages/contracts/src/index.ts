@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { checksum } from './canonical.js';
 export { canonicalJson, checksum, type JsonValue } from './canonical.js';
-import { SchemaVersionSchema, IdSchema, ChecksumSchema, TimestampSchema, CatalogEntryIdSchema, SyntheticTextSchema, PracticalConstraintsSchema } from './primitives.js';
+import { SchemaVersionSchema, IdSchema, ChecksumSchema, TimestampSchema, CatalogEntryIdSchema, SyntheticTextSchema, PracticalConstraintsSchema, ComparisonExecutionBindingSchema, AssistantVersionSchema } from './primitives.js';
 export * from './primitives.js';
 const label = z.string().trim().min(1).max(160);
 const text = z.string().trim().min(1).max(8000);
@@ -61,6 +61,7 @@ export const MappingConfirmationSchema = CreateMappingConfirmationRequestSchema.
 export const TargetInputSchema = z.strictObject({
   schema_version: SchemaVersionSchema, projectId: IdSchema, catalog: CatalogVersionSchema,
   task: TaskVersionSchema, mappings: z.array(MappingConfirmationSchema).max(500), eligibleCatalogEntryIds: entryIds,
+  execution: ComparisonExecutionBindingSchema.optional(),
 }).superRefine((input, ctx) => {
   const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
   if (input.catalog.projectId !== input.projectId) issue(['catalog', 'projectId'], 'Catalog belongs to another project');
@@ -143,7 +144,7 @@ export const RunnerHandshakeResponseSchema = z.strictObject({
   schema_version: SchemaVersionSchema, credentialId: IdSchema, projectId: IdSchema,
   leaseDurationSeconds: z.number().int().min(30).max(900),
 });
-export const ClaimAttemptRequestSchema = z.strictObject({ schema_version: SchemaVersionSchema });
+export const ClaimAttemptRequestSchema = z.strictObject({ schema_version: SchemaVersionSchema, assistantVersion: AssistantVersionSchema.optional() });
 export const ClaimAttemptResponseSchema = z.strictObject({
   schema_version: SchemaVersionSchema, attemptId: IdSchema, leaseId: IdSchema, leaseExpiresAt: TimestampSchema, input: TargetInputSchema,
 });
@@ -225,3 +226,17 @@ export const {
   pinReviewEvidence, validatePinnedReviewEvidence, validateApprovedExpectation, reviewEvidenceCoverage, reviewEvidenceLimitations,
   validateReviewRetry, prepareReviewDecision, selectSuiteCases, prepareSuitePublication, validatePublicationRetry,
 } = createReviewContracts({ targetInputSchema: TargetInputSchema, attemptSchema: AttemptSchema }, discoveryContracts);
+
+export * from './comparison.js';
+import { createComparisonContracts } from './comparison.js';
+export const {
+  CreateComparisonRequestSchema, ComparisonEvidenceReferenceSchema, ComparisonExpectationSchema, ComparisonCaseSchema, ComparisonSlotSchema, ComparisonPlanSchema,
+  ComparisonAttemptAssociationSchema, ComparisonStateSchema, ComparisonProgressSchema, ComparisonResultEvidenceSchema, ComparisonRuleResultSchema,
+  ComparisonRepeatResultSchema, ComparisonRepeatSummarySchema, ComparisonBehaviorChangeSchema, FinalizeComparisonRequestSchema, CancelComparisonRequestSchema,
+  ComparisonFinalReportSchema, ComparisonFinalizationSourceSchema, ComparisonRunSchema, ComparisonCreateResponseSchema, ComparisonDetailResponseSchema,
+  ComparisonListItemSchema, ComparisonListResponseSchema, ComparisonFinalizeResponseSchema, ComparisonWindowRequestSchema, ComparisonReadableReportSchema, PortableTestPackSchema, ReplayReportSchema, comparisonListItem,
+  deriveSyntheticFullProfileInput, projectComparisonCase, prepareComparisonPlan, comparisonExecutionRows, validateComparisonRetry, validateComparisonPlanAgainstSuite, comparisonAttemptId,
+  initialComparisonAssociations, comparisonProgress, comparisonClaimAllowed, validateComparisonRunnerBinding, projectComparisonResult, evaluateComparisonRules,
+  prepareComparisonFinalization, validateComparisonFinalizationRetry, validateComparisonReportAgainstPlan, buildPortableTestPack, validatePortableTestPack, parsePortableTestPack, renderComparisonReport, replayPortableTestPack, validateReplayReport,
+} = createComparisonContracts({ targetInputSchema: TargetInputSchema, attemptSchema: AttemptSchema, targetResultSchema: TargetResultSchema },
+  { SuiteVersionSchema, SuiteCaseSnapshotSchema, ApprovedExpectationSchema }, discoveryContracts);

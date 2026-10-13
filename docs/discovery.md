@@ -1,6 +1,6 @@
 # Private discovery backend
 
-TasteCase can now queue a bounded discovery job, compare two fictional cultural profiles against one fixed catalog, ask an authorised local runner for recommendations and save a proposed case. The finding is advisory. A person reviews it through the [review and suite API](review.md). No frontend, comparison/export/replay execution or deployment is included here.
+TasteCase can now queue a bounded discovery job, compare two fictional cultural profiles against one fixed catalog, ask an authorised local runner for recommendations and save a proposed case. The finding is advisory. A person reviews it through the [review and suite API](review.md); published suites feed the [comparison/export/replay service](comparison.md). This discovery module includes no frontend or deployment.
 
 ## One backend process
 

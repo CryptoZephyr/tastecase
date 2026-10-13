@@ -1,11 +1,11 @@
 import {
-  ApiErrorSchema, ClaimAttemptRequestSchema, ClaimAttemptResponseSchema, IdSchema,
+  ApiErrorSchema, ClaimAttemptRequestSchema, ClaimAttemptResponseSchema, IdSchema, assertSafePortableContent, validateComparisonRunnerBinding,
   RunnerHandshakeRequestSchema, RunnerHandshakeResponseSchema, SCHEMA_VERSION,
   TargetResultSchema, UploadTargetResultRequestSchema, UploadTargetResultResponseSchema, checksum,
   type ClaimAttemptResponse, type RunnerHandshakeResponse, type TargetAdapter,
   type TargetResult, type UploadTargetResultResponse,
 } from '@tastecase/contracts';
-import { RunnerError, readText, redactJson, validateEndpoint, validateTimeout, withDeadline, type Fetch, type RunnerErrorCode } from './safety.js';
+import { RunnerError, localSecrets, localAssistantVersion, readText, redactJson, validateEndpoint, validateTimeout, withDeadline, type Fetch, type RunnerErrorCode } from './safety.js';
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 export interface RunnerClientOptions {
@@ -15,6 +15,8 @@ export interface RunnerClientOptions {
   allowLoopbackHttp?: boolean;
   fetch?: Fetch;
   requestTimeoutMs?: number;
+  /** Explicit local release attestation, not a provider/model mapping. Defaults to TASTECASE_ASSISTANT_VERSION. */
+  assistantVersion?: string;
 }
 
 const errorCodes: Record<string, RunnerErrorCode> = {
@@ -31,6 +33,7 @@ export class RunnerClient {
   #fetch: Fetch;
   #timeout: number;
   #handshake: RunnerHandshakeResponse | undefined;
+  readonly assistantVersion: string | undefined;
 
   constructor(options: RunnerClientOptions = {}) {
     const env = options.env ?? process.env;
@@ -43,7 +46,8 @@ export class RunnerClient {
       throw new RunnerError('configuration_error', 'TASTECASE_RUNNER_TOKEN must contain a minted runner credential.');
     }
     this.#token = token;
-    this.#secrets = [token, ...(env.LITELLM_API_KEY ? [env.LITELLM_API_KEY] : [])];
+    this.#secrets = localSecrets(env);
+    this.assistantVersion = localAssistantVersion(options.assistantVersion ?? env.TASTECASE_ASSISTANT_VERSION, this.#secrets);
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#timeout = validateTimeout(options.requestTimeoutMs ?? 15_000, 120_000);
   }
@@ -68,13 +72,18 @@ export class RunnerClient {
   /** null is precisely HTTP 204, not an empty/malformed JSON response. */
   async claim(signal?: AbortSignal): Promise<ClaimAttemptResponse | null> {
     if (!this.#handshake) throw new RunnerError('configuration_error', 'Handshake is required before claiming work.');
-    const value = await this.#post('/runner/claims', JSON.stringify(ClaimAttemptRequestSchema.parse({ schema_version: SCHEMA_VERSION })), signal, true);
+    const value = await this.#post('/runner/claims', JSON.stringify(ClaimAttemptRequestSchema.parse({ schema_version: SCHEMA_VERSION, ...(this.assistantVersion !== undefined ? { assistantVersion: this.assistantVersion } : {}) })), signal, true);
     if (value === null) return null;
     const parsed = ClaimAttemptResponseSchema.safeParse(value);
     if (!parsed.success) throw new RunnerError('invalid_response', 'API claim does not contain a valid pinned input and lease.');
     if (parsed.data.input.projectId !== this.#handshake.projectId) {
       throw new RunnerError('project_mismatch', 'Claim belongs to a different project than the authenticated handshake.');
     }
+    try {
+      validateComparisonRunnerBinding(parsed.data.input, this.assistantVersion);
+      if (parsed.data.input.execution) assertSafePortableContent(parsed.data.input, this.#secrets);
+    }
+    catch { throw new RunnerError('invalid_response', 'Comparison claim does not match the explicit local release binding.'); }
     return parsed.data;
   }
 

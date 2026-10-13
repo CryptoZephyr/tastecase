@@ -6,12 +6,13 @@ import {
   CreateCatalogVersionRequestSchema, CreateTaskVersionRequestSchema, CreateMappingConfirmationRequestSchema,
   MintRunnerCredentialRequestSchema, RevokeRunnerCredentialRequestSchema, QueueAttemptRequestSchema,
   RunnerHandshakeRequestSchema, RunnerHandshakeResponseSchema, ClaimAttemptRequestSchema, ClaimAttemptResponseSchema,
-  UploadTargetResultRequestSchema, UploadTargetResultResponseSchema, TargetInputSchema,
+  UploadTargetResultRequestSchema, UploadTargetResultResponseSchema, TargetInputSchema, validateComparisonRunnerBinding,
 } from '@tastecase/contracts';
 import { bearerToken, createSupabaseOwnerVerifier, type OwnerVerifier } from './auth.js';
 import { HttpError, parseRequest, safeError } from './errors.js';
 import { registerDiscoveryRoutes } from './discovery-routes.js';
 import { registerReviewRoutes } from './review-routes.js';
+import { registerComparisonRoutes } from './comparison-routes.js';
 import {
   transaction, CREDENTIAL_COLUMNS, projectRecord, catalogRecord, taskRecord, mappingRecord, credentialRecord,
   attemptRecord, type ProjectRow, type VersionRow, type MappingRow, type CredentialRow, type AttemptRow,
@@ -101,7 +102,19 @@ export function buildServer(options: ServerOptions) {
           SELECT 'public.create_review_case(uuid,uuid,jsonb)'::regprocedure;
           SELECT 'public.record_review_decision(uuid,uuid,uuid,jsonb)'::regprocedure;
           SELECT 'public.create_suite(uuid,uuid,jsonb)'::regprocedure;
-          SELECT 'public.publish_suite(uuid,uuid,jsonb)'::regprocedure`);
+          SELECT 'public.publish_suite(uuid,uuid,jsonb)'::regprocedure;
+          SELECT id FROM public.comparison_runs LIMIT 0; SELECT comparison_id FROM public.comparison_state LIMIT 0;
+          SELECT comparison_id FROM public.comparison_cases LIMIT 0; SELECT attempt_id FROM public.comparison_targets LIMIT 0;
+          SELECT lease_id FROM public.comparison_dispatches LIMIT 0; SELECT id FROM public.comparison_cancellations LIMIT 0;
+          SELECT id FROM public.comparison_reports LIMIT 0; SELECT comparison_id FROM public.comparison_artifacts LIMIT 0;
+          SELECT 'public.create_comparison(uuid,uuid,jsonb)'::regprocedure;
+          SELECT 'public.get_comparison(uuid,uuid,uuid)'::regprocedure;
+          SELECT 'public.list_comparisons(uuid,uuid,integer,integer)'::regprocedure;
+          SELECT 'public.cancel_comparison(uuid,uuid,uuid,jsonb)'::regprocedure;
+          SELECT 'public.comparison_target_claimable(uuid,text)'::regprocedure;
+          SELECT 'public.reserve_comparison_dispatch(uuid,uuid,uuid,uuid,integer,text)'::regprocedure;
+          SELECT 'public.finalize_comparison(uuid,uuid,uuid,jsonb)'::regprocedure;
+          SELECT 'public.export_comparison_artifact(uuid,uuid,uuid,text)'::regprocedure`);
       }, requestSignal(request));
       return { status: 'ready' };
     } catch {
@@ -247,40 +260,62 @@ export function buildServer(options: ServerOptions) {
     return attemptRecord(result.rows[0]);
   }));
 
-  async function runner<T>(request: FastifyRequest, work: (client: PoolClient, credential: CredentialRow) => Promise<T>): Promise<T> {
+  async function runner<T>(request: FastifyRequest, work: (client: PoolClient, credential: CredentialRow) => Promise<T>, claiming = false): Promise<T> {
     const token = bearerToken(request.headers.authorization);
     if (!/^tc_runner_[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError(401, 'unauthorized', 'A valid runner credential is required.');
     const hash = createHash('sha256').update(token).digest('hex');
     return transaction(options.pool, async client => {
-      // SHARE permits parallel claims but conflicts with owner's UPDATE revocation.
-      const result = await client.query<CredentialRow>(`SELECT ${CREDENTIAL_COLUMNS} FROM public.runner_credentials WHERE token_hash=$1 FOR SHARE`, [hash]);
+      // Credential precedes attempt/state locks. Claims take UPDATE immediately because
+      // comparison reservation needs UPDATE; parallel SHARE upgrades would deadlock.
+      const result = await client.query<CredentialRow>(`SELECT ${CREDENTIAL_COLUMNS} FROM public.runner_credentials WHERE token_hash=$1 FOR ${claiming ? 'UPDATE' : 'SHARE'}`, [hash]);
       const credential = result.rows[0];
       if (!credential) throw new HttpError(401, 'unauthorized', 'A valid runner credential is required.');
       if (credential.revoked_at) throw new HttpError(401, 'credential_revoked', 'The runner credential has been revoked.');
       return work(client, credential);
-    }, requestSignal(request));
+    }, requestSignal(request)).catch((error: unknown) => {
+      if (typeof error === 'object' && error !== null && 'code' in error && ['55P03', '57014', '40P01', '40001'].includes(String(error.code))) {
+        throw new HttpError(503, 'internal_error', 'Runner work is temporarily busy.');
+      }
+      throw error;
+    });
   }
   app.post('/runner/handshake', async request => runner(request, async (_client, credential) => {
     parseRequest(RunnerHandshakeRequestSchema, request.body);
     return RunnerHandshakeResponseSchema.parse({ schema_version: SCHEMA_VERSION, credentialId: credential.id, projectId: credential.project_id, leaseDurationSeconds: leaseSeconds });
   }));
   app.post('/runner/claims', async (request, reply) => runner(request, async (client, credential) => {
-    parseRequest(ClaimAttemptRequestSchema, request.body);
-    const found = await client.query<AttemptRow>("SELECT * FROM public.target_attempts WHERE project_id=$1 AND (status='queued' OR (status='leased' AND lease_expires_at<=clock_timestamp())) AND public.discovery_target_claimable(id) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1", [credential.project_id]);
+    const body = parseRequest(ClaimAttemptRequestSchema, request.body);
+    const found = await client.query<AttemptRow>("SELECT * FROM public.target_attempts WHERE project_id=$1 AND (status='queued' OR (status='leased' AND lease_expires_at<=clock_timestamp())) AND public.discovery_target_claimable(id) AND public.comparison_target_claimable(id,$2) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1", [credential.project_id, body.assistantVersion ?? null]);
     if (!found.rows[0]) {
       reply.code(204);
       return;
     }
-    const result = await client.query<AttemptRow>("UPDATE public.target_attempts SET status='leased',lease_id=$2,lease_credential_id=$3,lease_expires_at=clock_timestamp()+make_interval(secs=>$4) WHERE id=$1 AND project_id=$5 RETURNING *", [found.rows[0].id, randomUUID(), credential.id, leaseSeconds, credential.project_id]).catch((error: unknown) => {
+    const selected = found.rows[0];
+    const input = TargetInputSchema.safeParse(selected.pinned_input);
+    if (!input.success || checksum(input.data) !== selected.input_checksum) throw new HttpError(409, 'conflict', 'The pinned work input is unavailable.');
+    try { validateComparisonRunnerBinding(input.data, body.assistantVersion); }
+    catch { throw new HttpError(409, 'conflict', 'The work does not match the explicit runner release binding.'); }
+    const leaseId = randomUUID();
+    const reserved = await client.query<{ value: boolean }>('SELECT public.reserve_comparison_dispatch($1,$2,$3,$4,$5,$6) AS value', [credential.project_id, selected.id, leaseId, credential.id, leaseSeconds, body.assistantVersion ?? null]);
+    if (reserved.rows[0]?.value !== true) {
+      reply.code(204);
+      return;
+    }
+    // Comparisons already installed their charged lease. Ordinary discovery/foundation
+    // inputs retain the legacy UPDATE and its discovery cancellation/budget backstop.
+    const result = input.data.execution
+      ? await client.query<AttemptRow>("SELECT * FROM public.target_attempts WHERE id=$1 AND project_id=$2 AND status='leased' AND lease_id=$3 AND lease_credential_id=$4 AND lease_expires_at>clock_timestamp()", [selected.id, credential.project_id, leaseId, credential.id])
+      : await client.query<AttemptRow>("UPDATE public.target_attempts SET status='leased',lease_id=$2,lease_credential_id=$3,lease_expires_at=clock_timestamp()+make_interval(secs=>$4) WHERE id=$1 AND project_id=$5 RETURNING *", [selected.id, leaseId, credential.id, leaseSeconds, credential.project_id]).catch((error: unknown) => {
       // The SQL backstop fences cancellation/deadline/budget races after claim selection.
       if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23514') {
         throw new HttpError(409, 'conflict', 'Work was stopped before a lease could be issued.');
       }
       throw error;
     });
+    if (!result.rows[0]) throw new HttpError(409, 'conflict', 'Work was stopped before a lease could be issued.');
     const record = attemptRecord(result.rows[0]);
     return ClaimAttemptResponseSchema.parse({ schema_version: SCHEMA_VERSION, attemptId: record.id, leaseId: record.leaseId, leaseExpiresAt: record.leaseExpiresAt, input: record.input });
-  }));
+  }, true));
   app.post('/runner/attempts/:attemptId/results', async request => runner(request, async (client, credential) => {
     const body = parseRequest(UploadTargetResultRequestSchema, request.body);
     const result = await client.query<AttemptRow>('SELECT * FROM public.target_attempts WHERE id=$1 AND project_id=$2 FOR UPDATE', [pathId(request, 'attemptId'), credential.project_id]);
@@ -309,6 +344,7 @@ export function buildServer(options: ServerOptions) {
   }));
   registerDiscoveryRoutes(app, { pathId, projectOwner });
   registerReviewRoutes(app, { pathId, projectOwner });
+  registerComparisonRoutes(app, { pathId, projectOwner });
   return app;
 }
 

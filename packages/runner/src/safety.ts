@@ -1,4 +1,23 @@
+import { AssistantVersionSchema, assertSafePortableContent } from '@tastecase/contracts';
+import type { Environment } from './client.js';
+
 export type Fetch = typeof globalThis.fetch;
+
+/** Conservative known-value coverage for local credentials; never a universal secret detector. */
+export function localSecrets(env: Environment): string[] {
+  return Object.entries(env).flatMap(([name, value]) => value && /(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|DATABASE_URL)/i.test(name) ? [value] : []);
+}
+
+export function localAssistantVersion(value: string | undefined, secrets: readonly string[] = []): string | undefined {
+  if (value === undefined) return undefined;
+  const parsed = AssistantVersionSchema.safeParse(value);
+  if (!parsed.success || parsed.data !== value || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new RunnerError('configuration_error', 'Local assistant release label is invalid.');
+  }
+  try { assertSafePortableContent(value, secrets); }
+  catch { throw new RunnerError('configuration_error', 'Local assistant release label must not contain credentials.'); }
+  return parsed.data;
+}
 
 export type RunnerErrorCode =
   | 'configuration_error' | 'invalid_request' | 'invalid_response' | 'project_mismatch'
