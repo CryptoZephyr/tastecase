@@ -124,7 +124,7 @@ Proof metadata remains in ignored local storage, not in published provider-respo
 Use Node **24.21.0** and PostgreSQL **17**. Install dependencies and build:
 
 ```sh
-npm install --ignore-scripts
+npm ci --ignore-scripts
 npm run build
 ```
 
@@ -180,7 +180,7 @@ For the bounded Qloo → Nova → runner check, see [live discovery verification
 
 ## Limitations
 
-- The official Qloo harness/Pi dependency chain currently has **four audit findings: two moderate and two high**. They remain unresolved and block public hosting; `npm audit` does not pass.
+- The four Qloo/Pi audit findings were resolved on 2026-10-13 with scoped dependency pins and the committed lockfile. `npm audit` reports **zero vulnerabilities**; clean installation, live official MCP calls and all 329 tests passed. Keep the lockfile: upstream Pi still pins the old versions. See [dependency verification](docs/discovery.md#dependency-security).
 - The ranking workflow accepts at most ten mapped options. Larger inputs are explicitly unsupported, not silently split into incomparable scores.
 - Nova's prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
