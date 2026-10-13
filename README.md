@@ -4,7 +4,7 @@
 
 TasteCase is for the engineering and QA team, not the traveler. It tests recommendations against the team's own restaurant catalog. Qloo helps identify cultural contrasts worth investigating; a human decides which findings deserve an expectation.
 
-Live demo: not available · Video: not available · Docs: this README and [backend guide](docs/discovery.md) · Submission: not submitted
+Live demo: not available · Video: not available · Docs: [discovery](docs/discovery.md) and [review/suites](docs/review.md) · Submission: not submitted
 
 No product screenshots exist yet; frontend and visual design are deferred.
 
@@ -18,9 +18,9 @@ A prompt or model change can alter a concierge's restaurant choices while its an
 
 ## What TasteCase does
 
-The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nova Micro selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. TasteCase saves the evidence as an advisory finding for later human review.
+The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nova Micro selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
 
-Owned projects, immutable catalog/task inputs, mapping confirmations, scoped runner access, cancellation and restart recovery are implemented. **Human review, published suites, comparisons, export and replay are not built yet.**
+Owned projects, immutable catalog/task inputs, mapping confirmations, scoped runner access, cancellation, restart recovery, human review and immutable suites are implemented. **Comparison, export and replay execution are not built yet.**
 
 ## How it works
 
@@ -30,6 +30,8 @@ Owned projects, immutable catalog/task inputs, mapping confirmations, scoped run
 4. A project-scoped runner calls the owner's locally configured assistant. Its credentials never go to the backend.
 5. Repeats and a smaller Qloo comparison investigate the selected pair without changing practical constraints or the target's eligible catalog.
 6. Immutable evidence and checksums survive restart. A saved taste finding still requires human approval; it is not a failed test.
+7. The owner accepts, edits, rejects or defers a case with a rationale. Acceptance alone keeps the taste finding advisory; explicit policy or objective checks need a scoped expectation.
+8. The owner publishes selected approved versions. The suite keeps its original evidence even after a later rejection, edit or runner result.
 
 ```mermaid
 flowchart LR
@@ -37,7 +39,9 @@ flowchart LR
   Qloo --> Case["Check facts and select a contrast"]
   Case --> Runner["Local runner: repeat and investigate"]
   Runner --> Finding["Saved advisory finding"]
-  Finding -.-> Review["Human review: not built yet"]
+  Finding --> Review["Owner: accept, edit, reject or defer"]
+  Review --> Suite["Immutable approved suite"]
+  Suite -.-> Replay["Comparison + replay: planned"]
 ```
 
 ## Why Qloo matters
@@ -84,10 +88,11 @@ A dedicated Supabase project holds the private database and Auth/Storage configu
 
 Verified on 2026-10-13:
 
-- `npm run check`: lint, strict types, builds and **235 passing tests**, including real Postgres tests; zero skipped.
+- `npm run check`: lint, strict types, builds and **329 passing tests**, including real Postgres tests; zero skipped.
 - Live discovery: four accepted Qloo ranking calls, one validated Nova decision and six real target calls through the runner. A worker restart reused saved checkpoints and checksums. One advisory candidate was saved.
 - Full live rankings returned **2 of 3** mapped restaurants for both profiles. Reduced pair rankings returned **2 of 2**. The final state stayed **partial** because coverage and traces were incomplete.
 - Hosted foundation: **61 checks** for real sign-in, project/runner isolation and private Storage. Hosted discovery: **28 checks** for schema readiness, real sign-in, queue/reopen/cancel, owner isolation and backend-only RPC permissions. Both discovery migrations applied once; a repeat applied zero.
+- Review/suites: API, SQL and contract tests cover concurrent edits, exact approval selection, atomic multi-case publication, same-ID retries and unchanged history after late uploads. Hosted review: **114 checks** through a loopback API with actual Supabase sign-in and synthetic evidence. The new migration applied once; a repeat applied zero. This did not call Qloo or a model, evaluate an assistant or establish a real human-approved taste verdict.
 
 Proof metadata remains in ignored local storage, not in published provider-response fixtures. Earlier attempts also preserved rate limits, rejected malformed output and recorded a valid no-useful-contrast result; the successful run does not erase those limits.
 
@@ -101,10 +106,13 @@ Proof metadata remains in ignored local storage, not in published provider-respo
 | Cancel a job | Stop new claims; retain valid already-dispatched uploads | API/worker/database tests passed |
 | Qloo omits an option or returns an error | Unavailable coverage, not disliked and not a taste failure | Live partial/error outcomes and adapter tests passed |
 | Model invents a contrast ID or adds claims | Reject it instead of persisting a verdict | Adapter tests passed |
+| Edit or publish from a stale revision | Visible conflict; do not overwrite newer approval | Concurrent API/SQL tests passed |
+| Publish a mix of approved and unreviewed cases | Reject the whole publication; no partial suite | Local tests and hosted check passed |
+| Edit/reject a case or upload a late result after publication | Preserve the suite and original review checksums | Local tests and hosted reopen check passed |
 
 ## Repository structure
 
-- `apps/api`: owner/runner/discovery routes, single-process backend and migration CLI.
+- `apps/api`: owner/runner/discovery/review/suite routes, single-process backend and migration CLI.
 - `apps/worker`: guarded MCP/model adapters, bounded investigations and recovery.
 - `packages/contracts`: shared validation, pinned inputs and checksums.
 - `packages/runner`: local runtime, CLI and LiteLLM sample adapter.
@@ -156,7 +164,7 @@ With `DATABASE_URL` pointing to local `tastecase_test`:
 npm run check
 ```
 
-This runs lint, strict type checks, builds, unit tests and real Postgres isolation/concurrency tests. Without `DATABASE_URL`, database suites are explicitly skipped; that is not a database pass. CI supplies PostgreSQL 17 and needs no model credentials.
+This runs lint, strict type checks, builds, unit tests and real Postgres isolation/concurrency tests. Set `DATABASE_URL` explicitly: some integration suites skip without it, while SQL suites default to the designated local database on port 55432. Skipped checks are not a database pass. CI supplies PostgreSQL 17 and needs no model credentials.
 
 An opt-in live check uses a labeled synthetic catalog and **one billed model call**:
 
@@ -176,12 +184,13 @@ For the bounded Qloo → Nova → runner check, see [live discovery verification
 - The ranking workflow accepts at most ten mapped options. Larger inputs are explicitly unsupported, not silently split into incomparable scores.
 - Nova's prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
-- No frontend, deployed backend, review/suite/comparison/export/replay flow or measured advantage over generic generation exists yet.
+- Review saves declarative expectations; no comparison engine, export or replay execution exists yet. Published advisory expectations remain non-automatic.
+- No frontend, deployed backend or measured advantage over generic generation exists yet.
 
 ## Roadmap
 
 - Deploy the API and verify its hosted operational and session-recovery paths.
-- Human review, immutable suites, comparison, export and pinned replay.
+- Comparison, export and pinned replay against published suites.
 - Owner-approved frontend and in-app documentation.
 - Hosted sample, judge access and a measured case-yield comparison.
 

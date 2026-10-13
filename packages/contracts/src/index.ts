@@ -212,3 +212,16 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 
 export { REST_CONTRACTS } from './rest.js';
 export * from './discovery.js';
+export * from './review.js';
+import { createReviewContracts } from './review.js';
+import * as discoveryContracts from './discovery.js';
+export const {
+  ObjectiveContractRuleSchema, ApprovedPolicyRuleSchema, ApprovedExpectationSchema, ReviewExpectationSchema,
+  ReviewDecisionRequestSchema, CreateReviewCaseRequestSchema, ReviewCaseSchema, ReviewHeadSchema, ReviewWindowRequestSchema,
+  PublishSuiteCaseSelectionSchema, PublishSuiteRequestSchema, CreateSuiteRequestSchema, SuiteIdentitySchema, SuiteListResponseSchema, prepareReviewCase,
+  PinnedReviewTargetSchema, ReviewEvidenceCoverageSchema, PinnedReviewEvidenceSourceSchema, PinnedReviewEvidenceSchema,
+  ExpectationVersionSchema, ReviewDecisionSchema, ReviewRecordSchema, ReviewCaseResponseSchema, ReviewCaseListResponseSchema,
+  ReviewHistoryResponseSchema, ReviewDecisionResponseSchema, SuiteCaseSnapshotSchema, SuiteVersionSchema, SuiteVersionListResponseSchema, PublishSuiteResponseSchema,
+  pinReviewEvidence, validatePinnedReviewEvidence, validateApprovedExpectation, reviewEvidenceCoverage, reviewEvidenceLimitations,
+  validateReviewRetry, prepareReviewDecision, selectSuiteCases, prepareSuitePublication, validatePublicationRetry,
+} = createReviewContracts({ targetInputSchema: TargetInputSchema, attemptSchema: AttemptSchema }, discoveryContracts);

@@ -1,6 +1,6 @@
 # Private discovery backend
 
-TasteCase can now queue a bounded discovery job, compare two fictional cultural profiles against one fixed catalog, ask an authorised local runner for recommendations and save a proposed case. The finding is advisory. A person still has to review it. No frontend, review/suite/export flow or deployment is included here.
+TasteCase can now queue a bounded discovery job, compare two fictional cultural profiles against one fixed catalog, ask an authorised local runner for recommendations and save a proposed case. The finding is advisory. A person reviews it through the [review and suite API](review.md). No frontend, comparison/export/replay execution or deployment is included here.
 
 ## One backend process
 
@@ -81,6 +81,6 @@ The separate billed local run used the actual official MCP child, four accepted 
 
 Both discovery migrations applied to the dedicated hosted Supabase project with verified TLS; a repeat applied zero migrations. A loopback API against that database passed **28 hosted checks** with two actual disposable Auth owners: schema readiness, queue/list/reopen, immutable pinned checksum, cross-owner job/evidence/candidate/confirmation/cancel denial, forced RLS on job/state rows and rejection of direct authenticated backend RPC use. The Auth users were deleted; clearly labeled cancelled fixture history remains isolated. No provider calls were made by this hosted fixture check. The foundation's earlier 61 hosted checks covered private Storage; discovery creates no new storage policy.
 
-Not checked: a runner on a different physical machine, cloud deployment, production process supervision or frontend/review/export. Local/provider and hosted-database checks are distinct; neither proves a hosted TasteCase app.
+Review and suite verification is documented [separately](review.md#verification). Not checked: a runner on a different physical machine, cloud deployment, production process supervision, frontend or comparison/export/replay execution. Local/provider and hosted-database checks are distinct; neither proves a hosted TasteCase app.
 
 `npm audit` exits 1 with **four vulnerabilities: two moderate and two high**. They are in the Qloo harness/Pi dependency chain, including Pi's `brace-expansion` and `undici`. Audit lists a possible brace-expansion fix but no complete fix for the pinned undici/Pi/harness chain. The harness's shrinkwrapped dependencies were not patched, suppressed or falsely marked clear. Review updated upstream releases before changing the required harness pin.

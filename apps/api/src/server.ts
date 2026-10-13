@@ -11,6 +11,7 @@ import {
 import { bearerToken, createSupabaseOwnerVerifier, type OwnerVerifier } from './auth.js';
 import { HttpError, parseRequest, safeError } from './errors.js';
 import { registerDiscoveryRoutes } from './discovery-routes.js';
+import { registerReviewRoutes } from './review-routes.js';
 import {
   transaction, CREDENTIAL_COLUMNS, projectRecord, catalogRecord, taskRecord, mappingRecord, credentialRecord,
   attemptRecord, type ProjectRow, type VersionRow, type MappingRow, type CredentialRow, type AttemptRow,
@@ -79,7 +80,7 @@ export function buildServer(options: ServerOptions) {
   app.get('/ready', async (request, reply) => {
     try {
       if (options.workerReady && !options.workerReady()) throw new Error('Discovery worker unavailable.');
-      // Readiness requires both applied gates, not just a live database socket.
+      // Readiness requires every exposed backend gate, not just a live database socket.
       await transaction(options.pool, async client => {
         await client.query("SET LOCAL statement_timeout='2s'");
         await client.query(`SELECT id FROM public.projects LIMIT 0;
@@ -92,7 +93,15 @@ export function buildServer(options: ServerOptions) {
           SELECT id FROM public.discovery_candidates LIMIT 0; SELECT attempt_id FROM public.discovery_job_targets LIMIT 0;
           SELECT lease_id FROM public.discovery_target_dispatches LIMIT 0;
           SELECT 'public.discovery_target_claimable(uuid)'::regprocedure;
-          SELECT 'public.tastecase_close_discovery_dispatches()'::regprocedure`);
+          SELECT 'public.tastecase_close_discovery_dispatches()'::regprocedure;
+          SELECT id FROM public.review_cases LIMIT 0; SELECT case_id FROM public.review_heads LIMIT 0;
+          SELECT id FROM public.review_decisions LIMIT 0; SELECT id FROM public.expectation_versions LIMIT 0;
+          SELECT id FROM public.suites LIMIT 0; SELECT id FROM public.suite_versions LIMIT 0;
+          SELECT suite_version_id FROM public.suite_version_cases LIMIT 0;
+          SELECT 'public.create_review_case(uuid,uuid,jsonb)'::regprocedure;
+          SELECT 'public.record_review_decision(uuid,uuid,uuid,jsonb)'::regprocedure;
+          SELECT 'public.create_suite(uuid,uuid,jsonb)'::regprocedure;
+          SELECT 'public.publish_suite(uuid,uuid,jsonb)'::regprocedure`);
       }, requestSignal(request));
       return { status: 'ready' };
     } catch {
@@ -299,6 +308,7 @@ export function buildServer(options: ServerOptions) {
     return UploadTargetResultResponseSchema.parse({ schema_version: SCHEMA_VERSION, attemptId: row.id, status: 'completed', resultChecksum: hash, idempotent });
   }));
   registerDiscoveryRoutes(app, { pathId, projectOwner });
+  registerReviewRoutes(app, { pathId, projectOwner });
   return app;
 }
 
