@@ -4,13 +4,14 @@ import {
   RunnerCredentialSchema, TargetInputSchema, type Attempt,
 } from '@tastecase/contracts';
 
-/** Credential locks always precede attempt locks, including upload retries. */
-export async function transaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>, signal?: AbortSignal): Promise<T> {
+/** Credential locks always precede attempt locks, including upload retries.
+ * Snapshot reads use repeatable read without granting row-lock/update permissions. */
+export async function transaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>, signal?: AbortSignal, snapshot = false): Promise<T> {
   const client = await pool.connect();
   let discard = false;
   try {
     signal?.throwIfAborted();
-    await client.query('BEGIN');
+    await client.query(snapshot ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN');
     await client.query("SET LOCAL statement_timeout = '5s'; SET LOCAL lock_timeout = '3s'; SET LOCAL idle_in_transaction_session_timeout = '10s'");
     const value = await work(client);
     // Do not start COMMIT for a request that has already timed out or disconnected.

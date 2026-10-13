@@ -1,15 +1,10 @@
 import { z } from 'zod';
 import { checksum } from './canonical.js';
 export { canonicalJson, checksum, type JsonValue } from './canonical.js';
-
-export const SCHEMA_VERSION = '1.0.0' as const;
-export const SchemaVersionSchema = z.literal(SCHEMA_VERSION);
-export const IdSchema = z.uuid().toLowerCase();
-export const ChecksumSchema = z.string().regex(/^[a-f0-9]{64}$/, 'Expected lowercase SHA-256 hex');
-export const TimestampSchema = z.iso.datetime({ offset: true });
+import { SchemaVersionSchema, IdSchema, ChecksumSchema, TimestampSchema, CatalogEntryIdSchema, SyntheticTextSchema, PracticalConstraintsSchema } from './primitives.js';
+export * from './primitives.js';
 const label = z.string().trim().min(1).max(160);
 const text = z.string().trim().min(1).max(8000);
-export const CatalogEntryIdSchema = z.string().trim().min(1).max(160);
 const entryIds = z.array(CatalogEntryIdSchema).max(500).refine(ids => new Set(ids).size === ids.length, 'Duplicate catalog entry IDs');
 const recordIds = z.array(IdSchema).max(500).refine(ids => new Set(ids).size === ids.length, 'Duplicate record IDs');
 const labels = z.array(label).max(100).refine(values => new Set(values).size === values.length, 'Duplicate values');
@@ -40,13 +35,6 @@ export const CreateCatalogVersionRequestSchema = z.strictObject({
 export const CatalogVersionSchema = CreateCatalogVersionRequestSchema.extend({ projectId: IdSchema, checksum: ChecksumSchema, createdAt: TimestampSchema })
   .refine(row => row.checksum === checksum(CreateCatalogVersionRequestSchema.parse(rowPayload(row))), 'Catalog checksum does not match content');
 
-export const SyntheticTextSchema = z.strictObject({ provenance: z.literal('synthetic'), label, text });
-export const PracticalConstraintsSchema = z.strictObject({
-  partySize: z.number().int().positive().max(10000),
-  location: z.strictObject({ city: label, countryCode: z.string().regex(/^[A-Z]{2}$/).optional() }).optional(),
-  budgetPerPerson: money.optional(), dietaryRequirements: labels,
-  accessibilityRequirements: labels, requiredCuisines: labels, excludedEntryIds: entryIds,
-});
 export const CreateTaskVersionRequestSchema = z.strictObject({
   schema_version: SchemaVersionSchema, id: IdSchema, label, catalogVersionId: IdSchema,
   syntheticBrief: SyntheticTextSchema, syntheticInterests: z.array(SyntheticTextSchema).max(100),
@@ -223,3 +211,4 @@ export type Attempt = z.infer<typeof AttemptSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 
 export { REST_CONTRACTS } from './rest.js';
+export * from './discovery.js';

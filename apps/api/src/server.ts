@@ -10,6 +10,7 @@ import {
 } from '@tastecase/contracts';
 import { bearerToken, createSupabaseOwnerVerifier, type OwnerVerifier } from './auth.js';
 import { HttpError, parseRequest, safeError } from './errors.js';
+import { registerDiscoveryRoutes } from './discovery-routes.js';
 import {
   transaction, CREDENTIAL_COLUMNS, projectRecord, catalogRecord, taskRecord, mappingRecord, credentialRecord,
   attemptRecord, type ProjectRow, type VersionRow, type MappingRow, type CredentialRow, type AttemptRow,
@@ -20,6 +21,7 @@ export interface ServerOptions {
   auth: { supabaseUrl: string; supabaseAnonKey: string } | { testVerifier: OwnerVerifier };
   leaseDurationSeconds?: number;
   handlerTimeoutMs?: number;
+  workerReady?: () => boolean;
 }
 
 const deadlineSignals = new WeakMap<FastifyRequest, AbortSignal>();
@@ -76,13 +78,21 @@ export function buildServer(options: ServerOptions) {
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/ready', async (request, reply) => {
     try {
-      // Readiness requires the applied foundation, not just a live database socket.
+      if (options.workerReady && !options.workerReady()) throw new Error('Discovery worker unavailable.');
+      // Readiness requires both applied gates, not just a live database socket.
       await transaction(options.pool, async client => {
         await client.query("SET LOCAL statement_timeout='2s'");
         await client.query(`SELECT id FROM public.projects LIMIT 0;
           SELECT id FROM public.catalog_versions LIMIT 0; SELECT id FROM public.task_versions LIMIT 0;
           SELECT id FROM public.mapping_confirmations LIMIT 0; SELECT id FROM public.runner_credentials LIMIT 0;
-          SELECT id FROM public.target_attempts LIMIT 0; SELECT attempt_id FROM public.target_attempt_mappings LIMIT 0`);
+          SELECT id FROM public.target_attempts LIMIT 0; SELECT attempt_id FROM public.target_attempt_mappings LIMIT 0;
+          SELECT id FROM public.discovery_jobs LIMIT 0; SELECT job_id FROM public.discovery_job_state LIMIT 0;
+          SELECT id FROM public.discovery_provider_attempts LIMIT 0; SELECT id FROM public.discovery_tool_evidence LIMIT 0;
+          SELECT id FROM public.discovery_anchor_resolutions LIMIT 0; SELECT id FROM public.discovery_anchor_confirmations LIMIT 0;
+          SELECT id FROM public.discovery_candidates LIMIT 0; SELECT attempt_id FROM public.discovery_job_targets LIMIT 0;
+          SELECT lease_id FROM public.discovery_target_dispatches LIMIT 0;
+          SELECT 'public.discovery_target_claimable(uuid)'::regprocedure;
+          SELECT 'public.tastecase_close_discovery_dispatches()'::regprocedure`);
       }, requestSignal(request));
       return { status: 'ready' };
     } catch {
@@ -91,20 +101,20 @@ export function buildServer(options: ServerOptions) {
   });
 
   const pathId = (request: FastifyRequest, key: string) => parseRequest(IdSchema, (request.params as Record<string, unknown>)[key]);
-  async function owner<T>(request: FastifyRequest, work: (client: PoolClient, ownerId: string) => Promise<T>): Promise<T> {
+  async function owner<T>(request: FastifyRequest, work: (client: PoolClient, ownerId: string) => Promise<T>, snapshot = false): Promise<T> {
     let verified: string | null;
     try { verified = await verifyOwner(bearerToken(request.headers.authorization)); } catch { verified = null; }
     const ownerId = IdSchema.safeParse(verified);
     if (!ownerId.success) throw new HttpError(401, 'unauthorized', 'Owner authentication is required.');
-    return transaction(options.pool, client => work(client, ownerId.data), requestSignal(request));
+    return transaction(options.pool, client => work(client, ownerId.data), requestSignal(request), snapshot);
   }
-  async function projectOwner<T>(request: FastifyRequest, work: (client: PoolClient, projectId: string, ownerId: string) => Promise<T>): Promise<T> {
+  async function projectOwner<T>(request: FastifyRequest, work: (client: PoolClient, projectId: string, ownerId: string) => Promise<T>, snapshot = false): Promise<T> {
     return owner(request, async (client, ownerId) => {
       const projectId = pathId(request, 'projectId');
       const project = await client.query<ProjectRow>('SELECT * FROM public.projects WHERE id=$1 AND owner_id=$2', [projectId, ownerId]);
       if (!project.rows[0]) throw new HttpError(404, 'not_found', 'The project was not found.');
       return work(client, projectId, ownerId);
-    });
+    }, snapshot);
   }
   async function catalog(client: PoolClient, projectId: string, id: string) {
     const result = await client.query<VersionRow>('SELECT * FROM public.catalog_versions WHERE project_id=$1 AND id=$2', [projectId, id]);
@@ -247,12 +257,18 @@ export function buildServer(options: ServerOptions) {
   }));
   app.post('/runner/claims', async (request, reply) => runner(request, async (client, credential) => {
     parseRequest(ClaimAttemptRequestSchema, request.body);
-    const found = await client.query<AttemptRow>("SELECT * FROM public.target_attempts WHERE project_id=$1 AND (status='queued' OR (status='leased' AND lease_expires_at<=clock_timestamp())) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1", [credential.project_id]);
+    const found = await client.query<AttemptRow>("SELECT * FROM public.target_attempts WHERE project_id=$1 AND (status='queued' OR (status='leased' AND lease_expires_at<=clock_timestamp())) AND public.discovery_target_claimable(id) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1", [credential.project_id]);
     if (!found.rows[0]) {
       reply.code(204);
       return;
     }
-    const result = await client.query<AttemptRow>("UPDATE public.target_attempts SET status='leased',lease_id=$2,lease_credential_id=$3,lease_expires_at=clock_timestamp()+make_interval(secs=>$4) WHERE id=$1 AND project_id=$5 RETURNING *", [found.rows[0].id, randomUUID(), credential.id, leaseSeconds, credential.project_id]);
+    const result = await client.query<AttemptRow>("UPDATE public.target_attempts SET status='leased',lease_id=$2,lease_credential_id=$3,lease_expires_at=clock_timestamp()+make_interval(secs=>$4) WHERE id=$1 AND project_id=$5 RETURNING *", [found.rows[0].id, randomUUID(), credential.id, leaseSeconds, credential.project_id]).catch((error: unknown) => {
+      // The SQL backstop fences cancellation/deadline/budget races after claim selection.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23514') {
+        throw new HttpError(409, 'conflict', 'Work was stopped before a lease could be issued.');
+      }
+      throw error;
+    });
     const record = attemptRecord(result.rows[0]);
     return ClaimAttemptResponseSchema.parse({ schema_version: SCHEMA_VERSION, attemptId: record.id, leaseId: record.leaseId, leaseExpiresAt: record.leaseExpiresAt, input: record.input });
   }));
@@ -282,6 +298,7 @@ export function buildServer(options: ServerOptions) {
     }
     return UploadTargetResultResponseSchema.parse({ schema_version: SCHEMA_VERSION, attemptId: row.id, status: 'completed', resultChecksum: hash, idempotent });
   }));
+  registerDiscoveryRoutes(app, { pathId, projectOwner });
   return app;
 }
 

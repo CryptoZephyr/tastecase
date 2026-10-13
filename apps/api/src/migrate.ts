@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import pg, { type Pool, type PoolClient } from 'pg';
+import { databasePoolConfig } from './database-config.js';
 
 export interface Migration { name: string; sql: string }
 
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
   if (process.argv.slice(2).some(argument => argument !== '--local-test-bootstrap') || process.argv.slice(2).length > 1) throw new Error('Invalid migration arguments.');
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL is required.');
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5000, query_timeout: 35000 });
+  const pool = new pg.Pool({ ...await databasePoolConfig(databaseUrl), max: 1, connectionTimeoutMillis: 5000, query_timeout: 35000 });
   try {
     const added = await runMigrations(pool, { databaseUrl, localTestBootstrap: process.argv.includes('--local-test-bootstrap') });
     console.info(`Database migrations applied: ${added.length}.`);
