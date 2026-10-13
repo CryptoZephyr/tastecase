@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Pool } from 'pg';
 import { buildBackend } from '../backend.js';
+import { buildServer } from '../server.js';
 
 const adapters = {
   qloo: () => { throw new Error('No provider calls allowed in lifecycle tests.'); },
@@ -40,4 +41,28 @@ test('worker failure makes readiness unavailable while health remains process-on
     assert.equal((await backend.app.inject('/ready')).statusCode, 503);
     assert.equal((await backend.app.inject('/health')).statusCode, 200);
   } finally { await backend.app.close(); }
+});
+
+test('readiness requires review tables and publication RPCs', async () => {
+  const queries: string[] = [];
+  let missing: string | undefined;
+  const schemaPool = { connect: async () => ({
+    query: async (sql: string) => {
+      queries.push(sql);
+      if (missing && sql.includes(missing)) throw new Error('Synthetic missing migration.');
+    },
+    release: () => {},
+  }) } as unknown as Pool;
+  const app = buildServer({ pool: schemaPool, auth: { testVerifier: async () => null } });
+  try {
+    assert.equal((await app.inject('/ready')).statusCode, 200);
+    for (const relation of ['review_cases', 'review_heads', 'review_decisions', 'expectation_versions', 'suites', 'suite_versions', 'suite_version_cases']) {
+      assert.ok(queries.some(sql => sql.includes(`public.${relation}`)));
+    }
+    for (const absent of ['public.review_cases', 'public.record_review_decision', 'public.publish_suite']) {
+      missing = absent;
+      assert.equal((await app.inject('/ready')).statusCode, 503);
+      assert.equal((await app.inject('/health')).statusCode, 200);
+    }
+  } finally { await app.close(); }
 });

@@ -38,6 +38,7 @@ The IDs must belong to the same owned project. This example shows the shape, not
 | `LITELLM_BASE_URL` | Trusted local provider base, including `/v1` when needed |
 | `LITELLM_API_KEY` | Target provider credential; stays local |
 | `LITELLM_MODEL` | Defaults to `nova-micro` |
+| `TASTECASE_ASSISTANT_VERSION` | Exact local release label required for comparison claims and offline replay |
 
 After building:
 
@@ -50,6 +51,8 @@ node packages/runner/dist/cli.js run-once
 For a loopback development API, add `--allow-loopback-http`. External HTTP and all redirects are rejected. Never pass tokens or keys as CLI arguments. Handshake needs no provider key and makes no target call.
 
 `run-once` handshakes, claims at most one attempt, invokes the local adapter once and uploads the result with the same attempt/lease identity. A 204 claim means no work. There is no background daemon or blind target-call retry.
+
+For comparison work, configure the intended adapter and bind its exact release label. Unbound or wrong-label runners cannot claim those slots; the label does not select a model automatically. The [comparison/replay guide](comparison.md) documents private pack/report exports and `replay --pack LOCAL.json --role candidate --pack-checksum SHA256 --report NEW.json`. Offline replay needs local provider configuration but no API/owner/runner credentials, and runs only the selected role.
 
 ## Adapter interface
 

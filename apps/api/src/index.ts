@@ -7,3 +7,11 @@ export {
   readDiscoveryJob, readDiscoveryDetail, readDiscoveryEvidence, readDiscoveryCandidate,
   discoveryJobRecord, discoveryProviderAttemptRecord, type DiscoveryJobRow, type DiscoveryProviderAttemptRow,
 } from './discovery-store.js';
+export {
+  createReviewCase, readReviewCase, listReviewCases, readReviewHistory, readReviewEvidence, recordReviewDecision,
+  createSuite, readSuite, listSuites, publishSuite, readSuiteVersion, listSuiteVersions,
+} from './review-store.js';
+export {
+  createComparison, readComparison, listComparisons, cancelComparison, finalizeComparison,
+  exportComparisonPack, exportComparisonReport,
+} from './comparison-store.js';

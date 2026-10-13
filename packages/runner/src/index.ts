@@ -3,4 +3,5 @@ export { runOnce, type Adapter, type RunOnceOptions, type RunOnceOutcome, type P
 export { createLiteLLMAdapter, LiteLLMAdapter, LITELLM_ADAPTER_METADATA, type LiteLLMAdapterOptions, type LiteLLMRun, type TokenUsage } from './litellm.js';
 export { RunnerError, validateEndpoint, type RunnerErrorCode, type Fetch } from './safety.js';
 export { runCli, CLI_USAGE, type CliDependencies } from './cli.js';
-export type { TargetInput, TargetResult, TargetAdapter, RunnerHandshakeResponse, ClaimAttemptResponse, UploadTargetResultResponse } from '@tastecase/contracts';
+export { replayComparisonRole, replayComparisonFile, readReplayPackFile, validateReplayPack, type ReplayRole, type ReplayRoleOptions } from './replay.js';
+export type { TargetInput, TargetResult, TargetAdapter, RunnerHandshakeResponse, ClaimAttemptResponse, UploadTargetResultResponse, PortableTestPack, ReplayReport } from '@tastecase/contracts';

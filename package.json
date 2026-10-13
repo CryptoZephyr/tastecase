@@ -9,13 +9,19 @@
     "build": "npm run build --workspace @tastecase/contracts && npm run build --workspace @tastecase/worker && npm run build --workspace @tastecase/api && npm run build --workspace @tastecase/runner",
     "typecheck": "npm run build && tsc --noEmit",
     "lint": "eslint apps packages scripts",
-    "test": "npm run build && npm run test --workspaces --if-present && node --import tsx --test supabase/foundation.test.ts supabase/discovery.test.ts",
+    "test": "npm run build && npm run test --workspaces --if-present && node --import tsx --test --test-concurrency=1 supabase/foundation.test.ts supabase/discovery.test.ts supabase/review.test.ts supabase/comparison.test.ts",
     "check": "npm run lint && npm run typecheck && npm test",
     "dev:api": "npm run dev --workspace @tastecase/api",
     "start": "npm run start --workspace @tastecase/api",
     "db:migrate": "tsx apps/api/src/migrate.ts",
     "verify:runner": "tsx scripts/verify-runner.ts",
     "verify:discovery": "tsx scripts/verify-discovery.ts"
+  },
+  "overrides": {
+    "@earendil-works/pi-coding-agent@0.84.2": {
+      "undici": "8.10.2",
+      "brace-expansion": "5.0.12"
+    }
   },
   "devDependencies": {
     "@types/node": "24.12.4",
