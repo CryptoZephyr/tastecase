@@ -22,7 +22,7 @@ const databaseUrl = process.env.DATABASE_URL;
 test('real PostgreSQL Gate 2 owner API and runner recovery', { skip: databaseUrl ? false : 'DATABASE_URL absent: discovery integration not run' }, async t => {
   if (!databaseUrl) return;
   const url = new URL(databaseUrl);
-  if (!process.env.CI && (url.hostname !== '127.0.0.1' || url.port !== '55432' || url.pathname !== '/tastecase_test')) throw new Error('Discovery integration requires the explicit local test DB.');
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.pathname !== '/tastecase_test') throw new Error('Discovery integration requires the explicit local test DB.');
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 12, connectionTimeoutMillis: 5000, query_timeout: 10000 });
   const owners = { a: randomUUID(), b: randomUUID() };
   const auth = { testVerifier: async (token: string) => token === 'synthetic-a' ? owners.a : token === 'synthetic-b' ? owners.b : null };
@@ -58,8 +58,7 @@ test('real PostgreSQL Gate 2 owner API and runner recovery', { skip: databaseUrl
     return id;
   }
   try {
-    // Applies only the normal checksum-ledger migrations. No hosted bootstrap, resets or deletion.
-    await runMigrations(pool);
+    await runMigrations(pool, { databaseUrl, localTestBootstrap: true });
     const project = ProjectSchema.parse((await request('POST', '/projects', { ...v, name: 'Synthetic Gate 2 API project' }, 201)).json());
     const other = ProjectSchema.parse((await request('POST', '/projects', { ...v, name: 'Synthetic other owner discovery' }, 201, 'synthetic-b')).json());
     base = `/projects/${project.id}/discovery-jobs`;

@@ -14,9 +14,9 @@ import { syntheticTarget } from './synthetic.js';
 import type { QlooAdapter, RankRequest, ProviderContext, Snapshot } from './types.js';
 
 // Never allow the integration tests to bootstrap or mutate a hosted database.
-const connectionString=process.env.WORKER_TEST_DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:55432/tastecase_test';
+const connectionString=process.env.WORKER_TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:55432/tastecase_test';
 const url=new URL(connectionString);
-if (url.hostname!=='127.0.0.1' || url.port!=='55432' || url.pathname!=='/tastecase_test') throw new Error('Worker tests require the designated loopback test DB');
+if (!['127.0.0.1','localhost','[::1]'].includes(url.hostname) || url.pathname!=='/tastecase_test') throw new Error('Worker tests require the designated loopback test DB');
 
 interface FixtureOptions { mapped?: number; unmapped?: boolean; unconfirmed?: boolean; reduce?: boolean; ageSeconds?: number; budgets?: Record<string,number> }
 async function fixture(options: FixtureOptions={}) {

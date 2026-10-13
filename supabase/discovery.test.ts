@@ -4,11 +4,10 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import pg from 'pg';
 import { checksum, CreateDiscoveryJobRequestSchema, PinnedDiscoveryInputSchema, discoveryAttemptId } from '@tastecase/contracts';
-import { runMigrations } from '../apps/api/src/migrate.js';
+import { assertLocalTestDatabase, runMigrations } from '../apps/api/src/migrate.js';
 
 const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:55432/tastecase_test';
-const url = new URL(connectionString);
-if (url.hostname !== '127.0.0.1' || url.port !== '55432' || url.pathname !== '/tastecase_test') throw new Error('Discovery tests require the loopback test DB');
+assertLocalTestDatabase(connectionString);
 
 test('Gate 2 SQL: immutable evidence, isolation, budgets, recovery and cancellation', async t => {
   const client = new pg.Client({ connectionString }); await client.connect();
