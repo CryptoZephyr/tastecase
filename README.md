@@ -6,11 +6,11 @@ TasteCase is for the engineering and QA team, not the traveler. It tests recomme
 
 Live demo: not available · Video: not available · Docs: [discovery](docs/discovery.md), [review/suites](docs/review.md) and [comparison/replay](docs/comparison.md) · Submission: not submitted
 
-No product screenshots exist yet; frontend and visual design are deferred.
+The web app (`apps/web`) is built to the owner-approved design but is **not yet connected to the API**; until it is, its screens show an honest “not connected” state. No product screenshots of real results exist yet.
 
-Built with: Qloo official MCP · Nova Micro · Supabase · Fastify / Node
+Built with: Qloo official MCP · Nova Micro · Supabase · Fastify / Node · Next.js / React Aria Components
 
-**Status: private backend and runner, checked locally against live providers and hosted Supabase. No deployed app.**
+**Status: private backend and runner, checked locally against live providers and hosted Supabase. Web app implemented against the API contracts; API wiring pending. No deployed app.**
 
 ## The problem
 
@@ -20,7 +20,7 @@ A prompt or model change can alter a concierge's restaurant choices while its an
 
 The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nova Micro selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
 
-Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can now compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally. **The frontend and hosted app are not built yet.**
+Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can now compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally. **The web app exists but is not wired to the API yet, and nothing is hosted.**
 
 ## How it works
 
@@ -60,7 +60,7 @@ There is no hosted judge path yet. Run the local checks below and inspect the [d
 
 ## Product / demo
 
-The current product surface is an owner-authenticated API plus a local runner CLI. No frontend, screenshot, demo video or public sample has been shipped.
+The current product surface is an owner-authenticated API plus a local runner CLI. The web app and in-app docs (`/docs`) cover every screen and recovery state, but they are not connected to the API, so no live screenshot, demo video or public sample exists yet.
 
 ## Architecture
 
@@ -117,6 +117,7 @@ Proof metadata remains in ignored local storage, not in published provider-respo
 
 ## Repository structure
 
+- `apps/web`: Next.js web app and in-app docs. All API access goes through one typed port (`src/lib/api/port.ts`).
 - `apps/api`: owner/runner/discovery/review/suite/comparison routes, single-process backend and migration CLI.
 - `apps/worker`: guarded MCP/model adapters, bounded investigations and recovery.
 - `packages/contracts`: shared validation, pinned inputs and checksums.
@@ -161,6 +162,15 @@ npm run db:migrate -- --local-test-bootstrap
 
 Never use the local bootstrap on a hosted Supabase database.
 
+### Web app
+
+```sh
+npm run build --workspace @tastecase/contracts   # web code uses its types only
+npm run dev:web                                   # http://localhost:3100
+```
+
+The web app talks to the API only through `apps/web/src/lib/api/port.ts`. Its transport (`src/lib/api/transport.ts`) is not wired yet, so every screen shows a “not connected” state rather than data. In development, `/dev/states` shows each screen and recovery state with clearly labelled synthetic fixtures; those routes are excluded from `next build`.
+
 ## Checks and live runner verification
 
 With `DATABASE_URL` pointing to local `tastecase_test`:
@@ -190,12 +200,12 @@ For the bounded Qloo → Nova → runner check, see [live discovery verification
 - Nova's prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
-- No frontend, deployed backend or measured advantage over generic generation exists yet.
+- The web app is not connected to the API; no deployed backend or measured advantage over generic generation exists yet.
 
 ## Roadmap
 
 - Deploy the API and verify its hosted operational and session-recovery paths.
-- Owner-approved frontend and in-app documentation.
+- Wire the web app to the API (transport, Supabase session) and add a public sample endpoint.
 - Hosted sample, judge access and a measured case-yield comparison.
 
 ## License
