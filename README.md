@@ -12,6 +12,8 @@ Built with: Qloo official MCP · NVIDIA Nemotron 3 Super (OpenRouter free) · Su
 
 **Status: hosted web app, private projects, backend and local runner. The repository stays private. The anonymous public sample is not provisioned.**
 
+![TasteCase's live homepage](docs/images/live-homepage.png)
+
 ## The problem
 
 A prompt or model change can alter a concierge's restaurant choices while its answers still sound sensible. Format checks alone do not show which recommendation cases changed or whether the change deserves attention.
@@ -93,7 +95,9 @@ A dedicated Supabase project holds the private database and Auth/Storage configu
 
 ## Evidence
 
-Current Nemotron verification (2026-10-14): **667 tests**, lint, types, production build and CI pass; dependency audit is clean. The real browser completed discovery, advisory review, exact suite publication, four comparison executions, frozen report/pack downloads and reopening. The browser-downloaded pack replayed through both distinct local prompt bindings on the same model. Total: **11 model requests reporting $0, four Qloo calls, zero retries or paid fallback**.
+Hosted browser verification (2026-10-14): genuine Qloo/Nemotron discovery, advisory review, immutable suite publication, a complete **8/8** comparison, frozen report/pack downloads and reopening through the deployed services. **One hosted decision plus ten local assistant requests; the ten local responses reported $0. Four Qloo calls; no model retries or paid fallback.** A transient session-verification timeout recovered with the visible retry; its cause was not established. The downloaded hosted pack was not replayed in this run. The pre-deployment replay evidence below remains separate.
+
+Pre-deployment Nemotron verification (2026-10-14): **667 tests**, lint, types, production build and CI passed; dependency audit was clean. The real browser completed discovery, advisory review, exact suite publication, four comparison executions, frozen report/pack downloads and reopening. The browser-downloaded pack replayed through both distinct local prompt bindings on the same model. Total: **11 model requests reporting $0, four Qloo calls, zero retries or paid fallback**. The deployment-docs and runner-instructions branch also passed all **668 tests**, lint, types and production build.
 
 Missing Qloo coverage and partial traces stayed visible. Recommendation ordering was unchanged; all selected outcomes stayed advisory, not automatic correctness passes or proof of better case yield. That pre-deployment verification did not provision an anonymous sample or deploy the app.
 

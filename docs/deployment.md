@@ -52,3 +52,9 @@ The selected Nemotron model is free-only with no paid/provider fallback. Baselin
 - No synthetic public sample has been selected and provisioned. Private cases are never used as an anonymous fallback.
 
 References: [Render free instances](https://render.com/docs/free), [Vercel environments](https://vercel.com/docs/deployments/overview).
+
+## Verification
+
+On 2026-10-14 the deployed browser journey reached a real saved case, advisory review, published suite, complete 8/8 comparison, frozen JSON/text/pack downloads and reopening. One hosted decision and ten local Nemotron assistant requests were made; the ten locally observed assistant responses reported $0. Four Qloo calls were used, with no model retries or paid fallback. The discovery case stayed partial/advisory; a complete comparison is not an automatic correctness pass.
+
+One transient session-verification timeout recovered through visible retry without changing the frozen report checksum. Its cause was not established. Email-link completion, deliberate cold-start recovery, cancellation, objective-rule failure and CLI replay were not covered. Both test runner credentials were revoked and only the two disposable Auth owners were deleted. The correction to the setup snippet in this PR is separate from the initial live commit.
