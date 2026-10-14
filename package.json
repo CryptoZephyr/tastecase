@@ -9,7 +9,7 @@
     "build": "npm run build --workspace @tastecase/contracts && npm run build --workspace @tastecase/worker && npm run build --workspace @tastecase/api && npm run build --workspace @tastecase/runner",
     "typecheck": "npm run build && tsc --noEmit && npm run typecheck --workspace @tastecase/web",
     "lint": "eslint apps packages scripts",
-    "test": "npm run build && npm run test --workspaces --if-present && node --import tsx --test --test-concurrency=1 supabase/foundation.test.ts supabase/discovery.test.ts supabase/review.test.ts supabase/comparison.test.ts",
+    "test": "npm run build && npm run test --workspaces --if-present && node --import tsx --test --test-concurrency=1 supabase/foundation.test.ts supabase/discovery.test.ts supabase/review.test.ts supabase/comparison.test.ts && node --import tsx --test scripts/benchmark-discovery.test.ts",
     "build:web": "npm run build --workspace @tastecase/contracts && npm run build --workspace @tastecase/web",
     "check": "npm run lint && npm run typecheck && npm test && npm run build:web",
     "dev:api": "npm run dev --workspace @tastecase/api",
