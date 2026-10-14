@@ -20,9 +20,9 @@ import { useResource } from '@/lib/api/use-resource';
 
 const RUNNER_ENV = `export TASTECASE_API_ORIGIN="<your TasteCase API origin>"
 export TASTECASE_RUNNER_TOKEN="<the token shown once above>"
-export LITELLM_BASE_URL="<your provider base URL, including /v1 if needed>"
-export LITELLM_API_KEY="<your provider key — stays on this machine>"
-export LITELLM_MODEL="nova-micro"   # optional; this is the default`;
+export TASTECASE_MODEL_PROVIDER="openrouter"
+export OPENROUTER_API_KEY="<your OpenRouter key — stays on this machine>"
+export TASTECASE_ASSISTANT_VERSION="<your exact assistant release label>"`;
 
 const RUNNER_COMMANDS = `npm ci --ignore-scripts && npm run build
 node packages/runner/dist/cli.js handshake

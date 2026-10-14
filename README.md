@@ -4,13 +4,13 @@
 
 TasteCase is for the engineering and QA team, not the traveler. It tests recommendations against the team's own restaurant catalog. Qloo helps identify cultural contrasts worth investigating; a human decides which findings deserve an expectation.
 
-Live demo: not available · Video: not available · Docs: [discovery](docs/discovery.md), [review/suites](docs/review.md) and [comparison/replay](docs/comparison.md) · Submission: not submitted
+Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](https://tastecase.vercel.app/docs) · Video: not available · Submission: not submitted
 
-The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed; hosting is still pending. Recorded evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
+The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed before deployment. The merged build is now hosted on Vercel and free Render. Recorded pre-deployment evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
 
 Built with: Qloo official MCP · NVIDIA Nemotron 3 Super (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
-**Status: private web app, backend and runner. Real-provider browser journey and replay verified against hosted Supabase. No deployed app or provisioned public sample.**
+**Status: hosted web app, private projects, backend and local runner. The repository stays private. The anonymous public sample is not provisioned.**
 
 ## The problem
 
@@ -20,7 +20,7 @@ A prompt or model change can alter a concierge's restaurant choices while its an
 
 The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nemotron selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
 
-Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally. **The wired browser journey is verified; hosting is not.**
+Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally.
 
 ## How it works
 
@@ -56,11 +56,11 @@ Missing cultural evidence is not a negative preference. An incomplete trace cann
 
 ## Try it
 
-There is no hosted judge path yet. Run the local checks below and inspect the [discovery API and recovery guide](docs/discovery.md). Live checks require your own authorised credentials and incur provider usage; CI uses synthetic fixtures instead.
+Open the [hosted app](https://tastecase.vercel.app) or [in-app docs](https://tastecase.vercel.app/docs). Private work requires sign-in and an authorised local runner. **Inspect a case** currently shows an honest unavailable state: no recorded anonymous sample is configured. Live checks require authorised credentials and provider allowance; CI uses synthetic fixtures instead.
 
 ## Product / demo
 
-The product has a web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. Real browser evidence now exists; no publicly accessible app or sample has been provisioned.
+The product has a hosted web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. The anonymous sample remains unavailable.
 
 ## Architecture
 
@@ -85,17 +85,17 @@ flowchart TB
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
 | Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; real-provider browser journey verified |
 | Fastify / Node | One API/worker process with a Postgres-backed queue | Local startup, readiness, cancellation and restart tests pass |
-| Vercel / Render | Planned web and persistent backend hosting | Not deployed |
+| Vercel / Render | Frontend and a combined API/discovery worker | Deployed on Vercel Hobby and one Render free web service; sleep and shared quotas apply |
 
 ## What's running
 
-A dedicated Supabase project holds the private database and Auth/Storage configuration. The API, discovery worker and runner have run on loopback for verification; they are **not publicly hosted**. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter. Earlier Nova Micro evidence below is historical, not verification of the new route.
+A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter. Earlier Nova Micro evidence below is historical, not verification of the new route.
 
 ## Evidence
 
 Current Nemotron verification (2026-10-14): **667 tests**, lint, types, production build and CI pass; dependency audit is clean. The real browser completed discovery, advisory review, exact suite publication, four comparison executions, frozen report/pack downloads and reopening. The browser-downloaded pack replayed through both distinct local prompt bindings on the same model. Total: **11 model requests reporting $0, four Qloo calls, zero retries or paid fallback**.
 
-Missing Qloo coverage and partial traces stayed visible. Recommendation ordering was unchanged; all selected outcomes stayed advisory, not automatic correctness passes or proof of better case yield. No public sample or deployment was created.
+Missing Qloo coverage and partial traces stayed visible. Recommendation ordering was unchanged; all selected outcomes stayed advisory, not automatic correctness passes or proof of better case yield. That pre-deployment verification did not provision an anonymous sample or deploy the app.
 
 Earlier verification on 2026-10-13 (Nova evidence is historical):
 

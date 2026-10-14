@@ -5,6 +5,7 @@ import { CaseReview } from '@/components/case/case-review';
 import { ReviewPanel } from '@/components/case/review-panel';
 import { ProjectsScreen } from '@/components/screens/projects-screen';
 import { SampleScreen } from '@/components/screens/sample-screen';
+import { RunnerStep } from '@/components/setup/runner-step';
 import { ClassBadge, OutcomeBadge } from '@/components/ui/badge';
 import { ApiProvider } from '@/lib/api/context';
 import { buildCaseView } from '@/lib/view/case-view';
@@ -43,6 +44,19 @@ describe('public sample', () => {
     expect(await screen.findByText('TasteCase isn’t connected to its service yet')).toBeTruthy();
     expect(screen.getByText(/Public sample · synthetic inputs/)).toBeTruthy();
     expect(screen.queryByText(/Fixture/)).toBeNull();
+  });
+});
+
+describe('runner setup instructions', () => {
+  it('configures the default OpenRouter adapter and explicitly binds an assistant release', async () => {
+    render(<ApiProvider api={fixtureApi()}><RunnerStep projectId={fx.ids.project} /></ApiProvider>);
+    await screen.findByRole('button', { name: 'Issue runner credential' });
+    const environment = screen.getByText(/export OPENROUTER_API_KEY/).textContent!;
+    expect(environment).toContain('TASTECASE_MODEL_PROVIDER="openrouter"');
+    expect(environment).toContain('TASTECASE_ASSISTANT_VERSION=');
+    expect(environment).toContain('TASTECASE_API_ORIGIN=');
+    expect(environment).not.toContain('LITELLM_');
+    expect(environment).not.toContain('nova-micro');
   });
 });
 
