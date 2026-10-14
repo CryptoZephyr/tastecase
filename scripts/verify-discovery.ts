@@ -11,7 +11,7 @@ import {
 } from '@tastecase/contracts';
 import { buildServer, buildBackend } from '../apps/api/src/index.js';
 import { OfficialQlooAdapter, OpenRouterDecisionAdapter } from '@tastecase/worker';
-import { RunnerClient, createConfiguredAdapter, runOnce } from '@tastecase/runner';
+import { RunnerClient, createConfiguredAdapter, OPENROUTER_MODEL, runOnce } from '@tastecase/runner';
 
 let stage = 'configuration';
 async function main() {
@@ -115,7 +115,7 @@ async function main() {
     await owner(path + '/discovery-jobs/' + cancelled.id + '/cancel', v);
     assert.equal(DiscoveryJobDetailResponseSchema.parse(await owner(path + '/discovery-jobs/' + cancelled.id)).job.state, 'cancelled');
     const ranks = saved.evidence.filter(e => e.data.kind === 'rank').map(e => e.data);
-    const proof = { synthetic: true, localAuthOnly: true, hostedApplication: false, model: 'nova-micro', projectId: project.id, jobId: job.id,
+    const proof = { synthetic: true, localAuthOnly: true, hostedApplication: false, model: OPENROUTER_MODEL, projectId: project.id, jobId: job.id,
       state: saved.job.state, checkpoint: saved.job.checkpoint, counters: saved.job.counters, targetCalls, workerRestartCount: restarts,
       reopenedChecksumsVerified: true, otherOwnerRead: '404', cancellation: 'passed',
       rankings: ranks.map(rank => rank.kind === 'rank' ? { profile: rank.profileId, scope: rank.scope, requested: rank.requestedEntryIds.length, returned: rank.orderedEntryIds.length, missing: rank.missingEntryIds.length } : {}),

@@ -206,7 +206,7 @@ An opt-in live check uses a labeled synthetic catalog and **one billed model cal
 TASTECASE_LIVE_VERIFY=1 npm run verify:runner
 ```
 
-It requires local `DATABASE_URL` and local `LITELLM_API_KEY`. It uses a synthetic owner verifier on a temporary loopback API, **not hosted Supabase login**. It verifies handshake, claim, real target execution, upload, checksum and reading the saved result from a fresh API instance. Proof metadata stays in ignored `.local/` storage; no keys or target text are printed.
+It requires local `DATABASE_URL` and local `OPENROUTER_API_KEY`. It uses a synthetic owner verifier on a temporary loopback API, **not hosted Supabase login**. It verifies handshake, claim, real target execution, upload, checksum and reading the saved result from a fresh API instance. Proof metadata stays in ignored `.local/` storage; no keys or target text are printed.
 
 See [runner setup and adapter contract](docs/runner.md) and [security boundaries](SECURITY.md).
 
