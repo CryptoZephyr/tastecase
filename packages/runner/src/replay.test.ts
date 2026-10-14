@@ -211,6 +211,16 @@ test('per-target timeouts are execution-unavailable without retries, full replay
   assert.equal(calls, 1); assert.equal(bounded.comparisonReport.stopReason, 'deadline_exceeded'); assert.equal(bounded.comparisonReport.progress.uncertainDispatches, 1);
 });
 
+test('overall deadline timer stops dispatch even when wall-clock milliseconds have not advanced', async t => {
+  const pack = fixture(); const fixedNow = Date.now(); let calls = 0;
+  t.mock.method(Date, 'now', () => fixedNow);
+  const report = await replay(pack, async () => { calls++; return new Promise(() => {}); }, { replayTimeoutMs: 5 });
+  assert.equal(calls, 1);
+  assert.equal(report.comparisonReport.stopReason, 'deadline_exceeded');
+  assert.equal(report.comparisonReport.progress.uncertainDispatches, 1);
+  assert.equal(report.comparisonReport.progress.completed, 0);
+});
+
 test('invalid local budget/report identity configuration fails before any dispatch', async () => {
   const pack = fixture(); let calls = 0; const reportId = randomUUID();
   for (const extra of [{ targetTimeoutMs: 0 }, { replayTimeoutMs: 3_600_001 }, { reportId: 'not-a-uuid' }, { reportId, env: { ...env, LOCAL_SECRET: reportId } }]) {
