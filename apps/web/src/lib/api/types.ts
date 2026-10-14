@@ -48,15 +48,8 @@ export interface ListWindow { limit?: number; offset?: number }
 /** An authenticated owner session as reported by the auth transport. Never decoded locally. */
 export interface Session { userId: string; email: string | null; expiresAt: string | null }
 
-/**
- * Public sample payload. No backend route exists for this yet (see the PR handoff): the shape
- * reuses the private review contracts so the same case view renders it. `provenance` must be
- * 'live' for actual processing or 'recorded' for previously captured evidence with its time.
- */
-export interface PublicSample {
-  provenance: 'live' | 'recorded';
-  capturedAt: string;
-  caseResponse: ReviewCaseResponse;
-  job: DiscoveryJobDetail;
-  attempts: import('@tastecase/contracts').Attempt[];
-}
+/** Read-only public projection. It intentionally omits private ownership, leases and error text. */
+export type PublicSample = import('@tastecase/contracts').PublicSample;
+export type ViewCaseResponse = ReviewCaseResponse | PublicSample['caseResponse'];
+export type ViewJobDetail = DiscoveryJobDetail | PublicSample['job'];
+export type ViewAttempt = import('@tastecase/contracts').Attempt | PublicSample['attempts'][number];

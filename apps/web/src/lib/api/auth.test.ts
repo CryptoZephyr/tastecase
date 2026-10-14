@@ -1,0 +1,38 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SupabaseClient, AuthChangeEvent } from '@supabase/supabase-js';
+import { callbackCode, createAuthDriver, publicAuthConfig } from './auth';
+import { safeNext } from '@/lib/routes';
+const owner = '00000000-0000-4000-8000-000000000001';
+const other = '00000000-0000-4000-8000-000000000002';
+function mockSdk() {
+  let event: (value: AuthChangeEvent) => void = () => undefined;
+  let verifiedOwner = owner;
+  const auth = {
+    onAuthStateChange: vi.fn(callback => { event = callback; return { data: { subscription: { unsubscribe() {} } } }; }),
+    getSession: vi.fn(async () => ({ error: null, data: { session: { access_token: 'synthetic.token', expires_at: 1790000000, user: { id: 'UNVERIFIED-DECODED-IDENTITY' } } } })),
+    getUser: vi.fn(async () => ({ error: null, data: { user: { id: verifiedOwner, email: 'synthetic@example.com', is_anonymous: false } } })),
+    signInWithPassword: vi.fn(async () => { event('SIGNED_IN'); return { error: null }; }),
+    exchangeCodeForSession: vi.fn(async () => { event('SIGNED_IN'); return { error: null }; }),
+    signOut: vi.fn(async () => ({ error: null as unknown })),
+    signUp: vi.fn(async () => ({ error: null, data: { session: null } })),
+    resetPasswordForEmail: vi.fn(async () => ({ error: null })), updateUser: vi.fn(async () => ({ error: null })),
+  };
+  const driver = createAuthDriver(() => ({ auth }) as unknown as SupabaseClient, () => 'https://tastecase.example');
+  return { auth, driver, event: (value: AuthChangeEvent) => event(value), setOwner: (id: string) => { verifiedOwner = id; } };
+}
+beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
+describe('verified browser auth', () => {
+  it('uses verified getUser(token), never decoded session user identity', async () => { const { auth, driver } = mockSdk(); const result = await driver.auth.getSession(); expect(result).toMatchObject({ ok: true, data: { userId: owner, email: 'synthetic@example.com' } }); expect(auth.getUser).toHaveBeenCalledWith('synthetic.token'); expect(await driver.authorization()).toEqual({ ok: true, data: { token: 'synthetic.token', ownerId: owner } }); });
+  it('password sign-in verifies the owner after SDK events', async () => { const { auth, driver } = mockSdk(); expect(await driver.auth.signInWithPassword('synthetic@example.com', 'synthetic-password')).toMatchObject({ ok: true, data: { userId: owner } }); expect(auth.signInWithPassword).toHaveBeenCalledWith({ email: 'synthetic@example.com', password: 'synthetic-password' }); });
+  it('events fence old requests and same-owner expiry preserves scoped drafts', async () => { const { driver, event } = mockSdk(); await driver.auth.getSession(); const key = `tastecase:review-draft:${owner}:project:case`; sessionStorage.setItem(key, 'synthetic-draft'); const listener = vi.fn(); driver.auth.subscribe!(listener); const before = driver.epoch(); driver.invalidate(); expect(driver.epoch()).toBeGreaterThan(before); expect(listener).toHaveBeenCalledWith('expired'); expect(sessionStorage.getItem(key)).toBe('synthetic-draft'); expect(await driver.authorization()).toMatchObject({ ok: false }); event('SIGNED_IN'); await driver.auth.getSession(); expect(sessionStorage.getItem(key)).toBe('synthetic-draft'); expect(await driver.authorization()).toMatchObject({ ok: true }); });
+  it('a different verified owner clears the previous owner drafts, including after reload', async () => { const { driver, setOwner, event } = mockSdk(); await driver.auth.getSession(); const key = `tastecase:review-draft:${owner}:project:case`; sessionStorage.setItem(key, 'synthetic-draft'); setOwner(other); event('SIGNED_IN'); expect(await driver.auth.getSession()).toMatchObject({ ok: true, data: { userId: other } }); expect(sessionStorage.getItem(key)).toBeNull(); sessionStorage.setItem(key, 'reload-draft'); sessionStorage.setItem('tastecase:last-owner', owner); const replacement = mockSdk(); replacement.setOwner(other); await replacement.driver.auth.getSession(); expect(sessionStorage.getItem(key)).toBeNull(); });
+  it('failed signout is visible and does not let authorization reuse the session', async () => { const { driver, auth } = mockSdk(); await driver.auth.getSession(); auth.signOut.mockResolvedValueOnce({ error: { message: 'synthetic-provider-detail' } }); const result = await driver.auth.signOut(); expect(result).toMatchObject({ ok: false, error: { kind: 'network' } }); expect(JSON.stringify(result)).not.toContain('synthetic-provider-detail'); expect(await driver.authorization()).toMatchObject({ ok: false, error: { kind: 'unauthorized' } }); });
+  it('successful explicit signout clears scoped draft data', async () => { const { driver } = mockSdk(); await driver.auth.getSession(); const key = `tastecase:review-draft:${owner}:project:case`; sessionStorage.setItem(key, 'synthetic-draft'); expect(await driver.auth.signOut()).toEqual({ ok: true, data: null }); expect(sessionStorage.getItem(key)).toBeNull(); });
+  it('redeems a PKCE code at most once even under duplicate callbacks', async () => { const { driver, auth } = mockSdk(); const url = 'https://tastecase.example/auth/callback?code=synthetic_code_123'; const results = await Promise.all([driver.auth.completeAuthLink(url), driver.auth.completeAuthLink(url)]); expect(results.every(result => result.ok)).toBe(true); expect(auth.exchangeCodeForSession).toHaveBeenCalledTimes(1); expect(auth.exchangeCodeForSession).toHaveBeenCalledWith('synthetic_code_123'); });
+  it('signup/recovery use the official SDK and fixed safe callback', async () => { const { driver, auth } = mockSdk(); expect(await driver.auth.signUp!('synthetic@example.com', 'synthetic-password', '//evil.example')).toEqual({ ok: true, data: null }); expect(auth.signUp).toHaveBeenCalledWith({ email: 'synthetic@example.com', password: 'synthetic-password', options: { emailRedirectTo: 'https://tastecase.example/auth/callback?next=%2Fprojects' } }); await driver.auth.requestPasswordReset!('synthetic@example.com', 'https://evil.example'); expect(auth.resetPasswordForEmail).toHaveBeenCalledWith('synthetic@example.com', { redirectTo: 'https://tastecase.example/auth/callback?next=%2Fprojects' }); expect(await driver.auth.updatePassword!('new-synthetic-password')).toMatchObject({ ok: true, data: { userId: owner } }); });
+});
+describe('callback/configuration safety', () => {
+  it.each(['https://evil.example/auth/callback?code=synthetic_123', 'https://tastecase.example/other?code=synthetic_123', 'https://tastecase.example/auth/callback#access_token=synthetic', 'https://tastecase.example/auth/callback?code=synthetic_123&code=another_123', 'https://tastecase.example/auth/callback?code=synthetic_123&error=invalid'])('rejects unsafe callback %s', value => expect(callbackCode(value, 'https://tastecase.example')).toBeNull());
+  it('rejects privileged auth keys and unsafe configuration origins', () => { const privileged = `synthetic.${btoa(JSON.stringify({ role: 'service_role' }))}.synthetic`; expect(publicAuthConfig('https://synthetic.supabase.co', privileged)).toBeNull(); expect(publicAuthConfig('https://synthetic.supabase.co', 'sb_secret_synthetic')).toBeNull(); expect(publicAuthConfig('http://remote.example', 'sb_publishable_synthetic')).toBeNull(); expect(publicAuthConfig('https://synthetic.supabase.co', 'sb_publishable_synthetic')).toEqual({ url: 'https://synthetic.supabase.co', key: 'sb_publishable_synthetic' }); });
+  it.each(['https://evil.example', '//evil.example', '/\\evil.example', '/%5Cevil.example', '/%252F%252Fevil.example', '\n/projects'])('rejects external next %s', value => expect(safeNext(value)).toBe('/projects'));
+});

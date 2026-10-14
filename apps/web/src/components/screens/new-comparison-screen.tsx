@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Checkbox, CheckboxGroup } from '@/components/ui/choice';
 import { Field, NativeSelect } from '@/components/ui/field';
@@ -16,6 +16,7 @@ import { useResource } from '@/lib/api/use-resource';
 import { newId, SCHEMA_VERSION } from '@/lib/ids';
 import { routes } from '@/lib/routes';
 import { plannedSlots } from '@/lib/view/comparison-view';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 
 function ComparisonForm({ projectId, version }: { projectId: string; version: SuiteVersion }) {
   const api = useApi();
@@ -32,6 +33,8 @@ function ComparisonForm({ projectId, version }: { projectId: string; version: Su
   const [extraDispatches, setExtraDispatches] = useState('0');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pendingBody, setPendingBody] = useState<CreateComparisonRequest | null>(null);
+  const request = useRef<{ key: string; body: CreateComparisonRequest } | null>(null);
+  const sending = useRef(false);
   const [error, setError] = useState<UiError | null>(null);
   const [pending, setPending] = useState(false);
   const slots = plannedSlots(cases.filter(row => selected.includes(row.id)));
@@ -51,14 +54,22 @@ function ComparisonForm({ projectId, version }: { projectId: string; version: Su
     if (slots + extra > 144) next.extraDispatches = 'The total dispatch budget can’t exceed 144.';
     setErrors(next);
     if (Object.keys(next).length) return null;
-    return { schema_version: SCHEMA_VERSION, id: newId(), suiteVersionId: version.id, baselineVersion: baseline.trim(), candidateVersion: candidate.trim(),
-      caseIds: cases.filter(row => selected.includes(row.id)).map(row => row.id), deadlineAt: new Date(Date.now() + windowMinutes * 60_000).toISOString(),
-      dispatchBudget: Math.max(4, slots + extra), reclaimBudget };
+    const content = { schema_version: SCHEMA_VERSION, suiteVersionId: version.id, baselineVersion: baseline.trim(), candidateVersion: candidate.trim(),
+      caseIds: cases.filter(row => selected.includes(row.id)).map(row => row.id), dispatchBudget: Math.max(4, slots + extra), reclaimBudget };
+    // The deadline window is part of the intent; elapsed time is not a body change.
+    const key = JSON.stringify({ ...content, windowMinutes });
+    if (request.current?.key === key) return request.current.body;
+    const body = { ...content, id: newId(), deadlineAt: new Date(Date.now() + windowMinutes * 60_000).toISOString() };
+    request.current = { key, body };
+    return body;
   }
 
   async function send(body: CreateComparisonRequest) {
+    if (sending.current) return;
+    sending.current = true;
     setPending(true); setError(null); setPendingBody(body);
     const result = await api.comparisons.create(projectId, body);
+    sending.current = false;
     setPending(false);
     if (result.ok) router.push(routes.comparison(projectId, result.data.comparison.plan.id)); else setError(result.error);
   }
@@ -87,32 +98,45 @@ function ComparisonForm({ projectId, version }: { projectId: string; version: Su
   );
 }
 
-export function NewComparisonScreen({ projectId, suiteId, versionId }: { projectId: string; suiteId?: string; versionId?: string }) {
+type SelectionProps = { projectId: string; suiteId?: string; versionId?: string };
+
+/** Query-string navigation can reuse the screen; reset local selection to the requested pin. */
+export function NewComparisonScreen(props: SelectionProps) {
+  return <ComparisonSelection key={JSON.stringify([props.projectId, props.suiteId, props.versionId])} {...props} />;
+}
+
+function ComparisonSelection({ projectId, suiteId, versionId }: SelectionProps) {
   const api = useApi();
-  const suites = useResource(() => api.suites.list(projectId, { limit: 20 }), [api, projectId]);
+  const suites = useResource(() => loadOwnerHistory(window => api.suites.list(projectId, window)), [api, projectId]);
   const published = suites.status === 'ready' ? suites.data.filter(row => row.currentVersion > 0) : [];
   const [chosenSuite, setChosenSuite] = useState<string | undefined>(suiteId);
   const activeSuite = chosenSuite ?? published[0]?.id;
-  const versions = useResource(() => api.suites.versions(projectId, activeSuite!, { limit: 20 }), [api, projectId, activeSuite], { enabled: Boolean(activeSuite) });
+  const versions = useResource(() => loadOwnerHistory(window => api.suites.versions(projectId, activeSuite!, window)), [api, projectId, activeSuite], { enabled: Boolean(activeSuite) });
   const [chosenVersion, setChosenVersion] = useState<string | undefined>(versionId);
   const sorted = versions.status === 'ready' ? [...versions.data].sort((a, b) => b.version - a.version) : [];
-  const version = sorted.find(row => row.id === chosenVersion) ?? sorted[0];
+  const activeVersion = chosenVersion ?? sorted[0]?.id;
+  const exact = useResource(() => api.suites.version(projectId, activeSuite!, activeVersion!), [api, projectId, activeSuite, activeVersion], { enabled: Boolean(activeSuite && activeVersion) });
+  const version = exact.status === 'ready' && exact.data.id === activeVersion && exact.data.suiteId === activeSuite && exact.data.projectId === projectId ? exact.data : undefined;
+  const choices = version && !sorted.some(row => row.id === version.id) ? [version, ...sorted] : sorted;
 
   return (
     <div className="mx-auto max-w-[960px] space-y-8">
       <PageHeader title="Compare two releases" description="Pick a published suite version, name the baseline and candidate releases, then run both on your runner." />
       {suites.status === 'loading' ? <SkeletonPanel label="Loading suites" /> : null}
-      {suites.status === 'error' ? <ErrorState error={suites.error} what="published suites" onRetry={suites.reload} retrying={suites.reloading} /> : null}
+      {suites.error ? <ErrorState error={suites.error} what="the latest complete published-suite history (showing stale saved data if available)" onRetry={suites.reload} retrying={suites.reloading} /> : null}
       {suites.status === 'ready' && !published.length ? <EmptyState title="No published suite yet" action={<ButtonLink href={routes.suites(projectId)}>Go to suites</ButtonLink>}><p>Comparisons run against an exact published suite version.</p></EmptyState> : null}
       {published.length ? (
         <Panel className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <NativeSelect id="cmp-suite" label="Suite" value={activeSuite ?? ''} onChange={value => { setChosenSuite(value); setChosenVersion(undefined); }} options={published.map(row => ({ value: row.id, label: row.name }))} />
-            {sorted.length ? <NativeSelect id="cmp-version" label="Published version" value={version?.id ?? ''} onChange={setChosenVersion} options={sorted.map(row => ({ value: row.id, label: `Version ${row.version} · ${row.cases.length} cases` }))} /> : null}
+            {choices.length ? <NativeSelect id="cmp-version" label="Published version" value={activeVersion ?? ''} onChange={setChosenVersion} options={[...(activeVersion && !choices.some(row => row.id === activeVersion) ? [{ value: activeVersion, label: 'Requested exact version (loading or unavailable)' }] : []), ...choices.map(row => ({ value: row.id, label: `Version ${row.version} · ${row.cases.length} cases` }))]} /> : null}
           </div>
           {versions.status === 'loading' ? <SkeletonPanel label="Loading versions" /> : null}
-          {versions.status === 'error' ? <ErrorState error={versions.error} what="suite versions" onRetry={versions.reload} retrying={versions.reloading} /> : null}
-          {version ? <ComparisonForm key={version.id} projectId={projectId} version={version} /> : null}
+          {versions.error ? <ErrorState error={versions.error} what="the latest complete suite-version history (showing stale saved data if available)" onRetry={versions.reload} retrying={versions.reloading} /> : null}
+          {activeVersion && exact.status === 'loading' ? <SkeletonPanel label="Loading the exact published version" /> : null}
+          {activeVersion && exact.error ? <ErrorState error={exact.error} what="the requested exact suite version" onRetry={exact.reload} retrying={exact.reloading} /> : null}
+          {exact.status === 'ready' && !version && !exact.error ? <ErrorState error={{ kind: 'conflict', message: 'The published snapshot does not match the requested project, suite and exact version.' }} what="the requested exact suite version" onRetry={exact.reload} retrying={exact.reloading} /> : null}
+          {version && versions.status === 'ready' && !exact.error && !versions.error && !suites.error ? <ComparisonForm key={`${projectId}:${version.id}`} projectId={projectId} version={version} /> : null}
         </Panel>
       ) : null}
     </div>

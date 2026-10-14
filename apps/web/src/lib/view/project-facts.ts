@@ -5,6 +5,7 @@ import type {
   CatalogVersion, ComparisonListItem, DiscoveryJob, MappingConfirmation, ReviewCaseResponse, RunnerCredential, SuiteIdentity, TaskVersion,
 } from '@/lib/api/types';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from './owner-history';
 
 export interface ProjectFacts {
   credentials: RunnerCredential[];
@@ -21,8 +22,8 @@ export interface ProjectFacts {
 export async function loadProjectFacts(api: TasteCaseApi, projectId: string): Promise<ApiResult<ProjectFacts>> {
   const result = await all([
     api.runnerCredentials.list(projectId), api.catalogs.list(projectId), api.mappings.list(projectId), api.tasks.list(projectId),
-    api.discovery.list(projectId, { limit: 20 }), api.cases.list(projectId, { limit: 20 }), api.suites.list(projectId, { limit: 20 }),
-    api.comparisons.list(projectId, { limit: 20 }),
+    loadOwnerHistory(window => api.discovery.list(projectId, window)), loadOwnerHistory(window => api.cases.list(projectId, window)), loadOwnerHistory(window => api.suites.list(projectId, window)),
+    loadOwnerHistory(window => api.comparisons.list(projectId, window)),
   ] as const);
   if (!result.ok) return result;
   const [credentials, catalogs, mappings, tasks, jobs, cases, suites, comparisons] = result.data;
@@ -33,9 +34,10 @@ export interface SetupStep { id: 'runner' | 'catalog' | 'mappings' | 'task' | 'b
 
 export function setupSteps(facts: ProjectFacts): SetupStep[] {
   const active = facts.credentials.filter(row => row.revokedAt === null);
+  const verified = active.filter(row => row.lastHandshakeAt != null);
   return [
-    { id: 'runner', title: 'Connect your runner', done: active.length > 0,
-      detail: active.length ? `${active.length} active runner credential${active.length === 1 ? '' : 's'}. Confirm the handshake on the runner machine.` : 'Issue a project credential for your local runner.' },
+    { id: 'runner', title: 'Connect your runner', done: verified.length > 0,
+      detail: verified.length ? `${verified.length} credential${verified.length === 1 ? '' : 's'} with a verified handshake. Current connection is offline or unknown.` : active.length ? `${active.length} issued credential${active.length === 1 ? '' : 's'}; no verified handshake recorded. Run the handshake, then check status.` : 'Issue a project credential for your local runner.' },
     { id: 'catalog', title: 'Import your restaurant catalog', done: facts.catalogs.length > 0,
       detail: facts.catalogs.length ? `${facts.catalogs.length} immutable catalog version${facts.catalogs.length === 1 ? '' : 's'}.` : 'Import the restaurants your assistant may recommend.' },
     { id: 'mappings', title: 'Confirm Qloo mappings', done: facts.mappings.length > 0,
@@ -52,7 +54,7 @@ export interface NextAction { title: string; body: string; href: string; cta: st
 /** One dominant next action derived from backend facts, never from local checkmarks. */
 export function nextAction(projectId: string, facts: ProjectFacts): NextAction {
   const step = setupSteps(facts).find(row => !row.done && row.id !== 'budgets');
-  if (step) return { title: step.title, body: step.detail, href: routes.setup(projectId, step.id), cta: step.id === 'runner' ? 'Issue a runner credential' : `Go to ${step.title.toLowerCase()}` };
+  if (step) return { title: step.title, body: step.detail, href: routes.setup(projectId, step.id), cta: step.id === 'runner' ? (facts.credentials.some(row => !row.revokedAt) ? 'Verify the runner handshake' : 'Issue a runner credential') : `Go to ${step.title.toLowerCase()}` };
   const confirming = facts.jobs.find(job => job.state === 'needs_confirmation');
   if (confirming) return { title: 'Confirm an interest match', body: 'A discovery job is waiting for you to choose the right Qloo entity.', href: routes.job(projectId, confirming.id), cta: 'Review the matches' };
   const waiting = facts.jobs.find(job => job.state === 'waiting_runner');

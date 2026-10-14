@@ -69,7 +69,7 @@ export function Segmented({ label, items, className, ...props }: Omit<ToggleButt
     <ToggleButtonGroup {...props} aria-label={label} selectionMode="single" disallowEmptySelection className={cn('inline-flex flex-wrap gap-1 rounded-control border border-stroke bg-surface p-1', className)}>
       {items.map(item => (
         <ToggleButton key={item.id} id={item.id} isDisabled={item.isDisabled} aria-description={item.description}
-          className="min-h-9 rounded-[4px] px-3 text-control text-ink hover:bg-subtle data-[selected]:bg-action data-[selected]:text-white data-[disabled]:cursor-not-allowed data-[disabled]:text-ink-2 data-[disabled]:line-through data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-action">
+          className="min-h-11 rounded-[4px] px-3 text-control text-ink hover:bg-subtle data-[selected]:bg-action data-[selected]:text-white data-[disabled]:cursor-not-allowed data-[disabled]:text-ink-2 data-[disabled]:line-through data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-action">
           {item.label}
         </ToggleButton>
       ))}

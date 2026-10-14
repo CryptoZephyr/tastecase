@@ -104,6 +104,9 @@ export const reference: DocSection = {
           [<code key="s">SUPABASE_URL</code>, 'Verifies real owner sessions.'], [<code key="a">SUPABASE_ANON_KEY</code>, 'Supabase public key for session verification.'],
           [<code key="ca">NODE_EXTRA_CA_CERTS</code>, 'Path to Supabase’s CA certificate.'], [<code key="cf">DATABASE_SSL_CA_FILE</code>, 'Same certificate for the database client.'],
           [<code key="q">QLOO_API_KEY</code>, 'Backend-only Qloo credential.'], [<code key="l">LiteLLM_API_KEY</code>, 'Backend decision model credential.'],
+          [<code key="sp">TASTECASE_PUBLIC_SAMPLE_PROJECT_ID</code>, 'Server-only allowlist: dedicated synthetic sample project UUID. No default.'],
+          [<code key="sc">TASTECASE_PUBLIC_SAMPLE_CASE_ID</code>, 'Server-only allowlist: recorded case UUID in that project. Never a browser selector.'],
+          [<code key="ss">TASTECASE_PUBLIC_SAMPLE_INPUTS_SYNTHETIC</code>, 'Set to true only after reviewing the dedicated inputs as synthetic. All sample settings are required together.'],
         ]} />
         <H2 id="runner">Runner</H2>
         <Table label="Runner variables" head={['Variable', 'Purpose']} rows={[
@@ -113,7 +116,13 @@ export const reference: DocSection = {
         ]} />
         <p>Never pass keys or tokens as command-line arguments.</p>
         <H2 id="web">Web app</H2>
-        <Table label="Web app variables" head={['Variable', 'Purpose']} rows={[[<code key="r">NEXT_PUBLIC_TASTECASE_REPOSITORY_URL</code>, 'Optional public repository URL. The footer shows a GitHub link only when this is set.']]} />
+        <Table label="Web app variables" head={['Variable', 'Purpose']} rows={[
+          [<code key="o">TASTECASE_API_ORIGIN</code>, 'Server-only fixed API origin for the same-origin proxy: HTTPS, or loopback HTTP for local development. No path, query or credentials.'],
+          [<code key="s">NEXT_PUBLIC_SUPABASE_URL</code>, 'Public Supabase Auth origin. Must match the API’s Supabase project.'],
+          [<code key="k">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>, 'Public publishable key; never a secret or service-role key. NEXT_PUBLIC_SUPABASE_ANON_KEY is supported as the legacy public-key fallback.'],
+          [<code key="r">NEXT_PUBLIC_TASTECASE_REPOSITORY_URL</code>, 'Optional public repository URL. The footer shows a GitHub link only when this is set.'],
+        ]} />
+        <p>Register the web app’s <code>/auth/callback</code> URL in Supabase Auth’s redirect allowlist. Production authentication uses verified sessions; a locally simulated test identity is not hosted sign-in proof. Unconfigured private requests fail closed, while the anonymous sample never consults owner authentication.</p>
         <Callout kind="limitation">Anything prefixed <code>NEXT_PUBLIC_</code> is visible to browsers. Never put secrets there.</Callout>
       </>
     ),

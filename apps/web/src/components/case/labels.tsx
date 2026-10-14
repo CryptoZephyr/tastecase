@@ -27,7 +27,7 @@ export function RoleTag({ role, version, className }: { role: 'baseline' | 'cand
   return (
     <span className={cn('inline-flex max-w-full items-center gap-2 rounded-control border border-rule bg-subtle px-2 py-1 text-meta', className)}>
       <span className="font-medium text-ink">{role === 'baseline' ? 'Baseline' : 'Candidate'}</span>
-      <code className="truncate font-mono text-ink" title={version}>{version}</code>
+      <code className="min-w-0 break-words whitespace-pre-wrap font-mono text-ink" title={version}>{version}</code>
     </span>
   );
 }

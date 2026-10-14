@@ -19,7 +19,7 @@ export const using: DocSection = {
           <li>Define the task and practical constraints.</li>
           <li>Review call budgets when you start discovery.</li>
         </ol>
-        <p>A step counts as done only when its record is saved in TasteCase; nothing is ticked off in your browser alone.</p>
+        <p>A step counts as done only when its record is saved in TasteCase; nothing is ticked off in your browser alone. Issuing a credential does not verify a runner: setup needs a persisted handshake on an active credential. The timestamp records a past connection, not a live heartbeat, and revocation removes that credential from readiness.</p>
         <H2 id="next">The next-step view</H2>
         <p>The project overview shows one dominant next action derived from saved records — the next setup step for a new project, or the latest suite and comparison with a Resume link for a returning one.</p>
         <H2 id="return">Coming back later</H2>

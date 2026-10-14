@@ -24,13 +24,18 @@ export interface TasteCaseApi {
   readonly transport: 'unwired' | 'http' | 'fixture';
   auth: {
     getSession(): R<Session | null>;
+    /** Events invalidate private displays immediately; refresh can retain a verified same owner. */
+    subscribe?(listener: (event: 'changed' | 'refresh' | 'expired') => void): () => void;
+    signUp?(email: string, password: string, next: string): R<Session | null>;
+    requestPasswordReset?(email: string, next: string): R<null>;
+    updatePassword?(password: string): R<Session>;
     signInWithPassword(email: string, password: string): R<Session>;
     signOut(): R<null>;
     /** Completes an emailed auth link (e.g. confirmation) from its callback URL. */
     completeAuthLink(url: string): R<Session>;
   };
   sample: {
-    /** No backend route exists yet; the sample stays explicitly unavailable until one does. */
+    /** Anonymous, fixed recorded synthetic sample; never an owner record or live dispatch. */
     getPublicSample(): R<PublicSample>;
   };
   projects: {
@@ -49,6 +54,7 @@ export interface TasteCaseApi {
     create(projectId: string, body: CreateTaskVersionRequest): R<TaskVersion>;
   };
   mappings: {
+    get(projectId: string, mappingId: string): R<MappingConfirmation>;
     list(projectId: string): R<MappingConfirmation[]>;
     create(projectId: string, body: CreateMappingConfirmationRequest): R<MappingConfirmation>;
   };
@@ -59,6 +65,8 @@ export interface TasteCaseApi {
     revoke(projectId: string, credentialId: string): R<RunnerCredential>;
   };
   attempts: {
+    list(projectId: string): R<Attempt[]>;
+    queue(projectId: string, body: import('@tastecase/contracts').QueueAttemptRequest): R<Attempt>;
     get(projectId: string, attemptId: string): R<Attempt>;
   };
   discovery: {

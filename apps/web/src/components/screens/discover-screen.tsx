@@ -12,11 +12,12 @@ import { EmptyState, ErrorState, LastUpdated } from '@/components/ui/states';
 import { useApi } from '@/lib/api/context';
 import { all, useResource } from '@/lib/api/use-resource';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 import { budgetRows, DISCOVERY_STATES } from '@/lib/view/discovery-view';
 
 export function DiscoverScreen({ projectId }: { projectId: string }) {
   const api = useApi();
-  const jobs = useResource(() => api.discovery.list(projectId, { limit: 20 }), [api, projectId], { pollWhile: list => list.some(job => DISCOVERY_STATES[job.state].active) });
+  const jobs = useResource(() => loadOwnerHistory(window => api.discovery.list(projectId, window)), [api, projectId], { pollWhile: list => list.some(job => DISCOVERY_STATES[job.state].active) });
   const inputs = useResource(() => all([api.catalogs.list(projectId), api.tasks.list(projectId), api.mappings.list(projectId)] as const), [api, projectId]);
 
   return (

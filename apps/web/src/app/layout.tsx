@@ -5,13 +5,9 @@ import { ApiProvider } from '@/lib/api/context';
 import './globals.css';
 
 // Self-hosted (SIL OFL 1.1, licenses in ./fonts). No font request leaves the site at runtime.
-const plexSans = localFont({
-  src: [
-    { path: './fonts/ibm-plex-sans-latin-400-normal.woff2', weight: '400', style: 'normal' },
-    { path: './fonts/ibm-plex-sans-latin-500-normal.woff2', weight: '500', style: 'normal' },
-    { path: './fonts/ibm-plex-sans-latin-600-normal.woff2', weight: '600', style: 'normal' },
-  ],
-  variable: '--font-plex-sans',
+const manrope = localFont({
+  src: [{ path: './fonts/manrope-latin-wght-normal.woff2', weight: '200 800', style: 'normal' }],
+  variable: '--font-manrope',
   display: 'swap',
   fallback: ['system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
 });
@@ -24,12 +20,6 @@ const plexMono = localFont({
   display: 'swap',
   fallback: ['ui-monospace', 'Consolas', 'monospace'],
 });
-const instrumentSerif = localFont({
-  src: [{ path: './fonts/instrument-serif-latin-400-normal.woff2', weight: '400', style: 'normal' }],
-  variable: '--font-instrument-serif',
-  display: 'swap',
-  fallback: ['Georgia', 'serif'],
-});
 
 export const metadata: Metadata = {
   title: { default: 'TasteCase — find recommendation cases worth testing', template: '%s · TasteCase' },
@@ -41,7 +31,7 @@ export const viewport: Viewport = { themeColor: '#f8e7c9', colorScheme: 'light' 
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable} ${instrumentSerif.variable}`}>
+    <html lang="en" className={`${manrope.variable} ${plexMono.variable}`}>
       <body className="bg-canvas font-sans text-ink antialiased">
         <a href="#main" className="sr-only z-50 rounded-control bg-action px-4 py-3 text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Skip to content</a>
         <ApiProvider>{children}</ApiProvider>

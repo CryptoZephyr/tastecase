@@ -18,6 +18,7 @@ import type { PublishSuiteRequest, ReviewCaseResponse, SuiteIdentity, SuiteVersi
 import { all, useResource } from '@/lib/api/use-resource';
 import { newId, SCHEMA_VERSION } from '@/lib/ids';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 
 const caseTitle = (row: { candidate: ReviewCaseResponse['candidate'] }) => `${row.candidate.content.briefs.a.label} / ${row.candidate.content.briefs.b.label}`;
 
@@ -94,14 +95,15 @@ function PublishPanel({ projectId, suite, cases, onPublished }: { projectId: str
 
 export function SuiteScreen({ projectId, suiteId }: { projectId: string; suiteId: string }) {
   const api = useApi();
-  const data = useResource(() => all([api.suites.get(projectId, suiteId), api.suites.versions(projectId, suiteId, { limit: 20 })] as const), [api, projectId, suiteId]);
-  const cases = useResource(() => api.cases.list(projectId, { limit: 20 }), [api, projectId]);
+  const data = useResource(() => all([api.suites.get(projectId, suiteId), loadOwnerHistory(window => api.suites.versions(projectId, suiteId, window))] as const), [api, projectId, suiteId]);
+  const cases = useResource(() => loadOwnerHistory(window => api.cases.list(projectId, window)), [api, projectId]);
   if (data.status === 'loading') return <SkeletonPanel label="Loading the suite" />;
   if (data.status === 'error') return <ErrorState error={data.error} what="this suite" onRetry={data.reload} retrying={data.reloading} />;
   const [suite, versions] = data.data;
   return (
     <div className="space-y-10">
       <PageHeader title={suite.name} description={suite.currentVersion ? `Current version ${suite.currentVersion}. Comparisons always reference an exact version.` : 'Nothing published yet.'} />
+      {data.error ? <ErrorState error={data.error} what="the latest complete suite history (showing stale saved data)" onRetry={data.reload} retrying={data.reloading} /> : null}
       <Section title="Published versions">
         {versions.length ? (
           <ul className="divide-y divide-rule rounded-panel border border-rule bg-surface">
@@ -117,8 +119,8 @@ export function SuiteScreen({ projectId, suiteId }: { projectId: string; suiteId
       </Section>
       <Section title={`Publish version ${suite.currentVersion + 1}`}>
         {cases.status === 'loading' ? <SkeletonRows rows={2} label="Loading approved cases" /> : null}
-        {cases.status === 'error' ? <ErrorState error={cases.error} what="approved cases" onRetry={cases.reload} retrying={cases.reloading} /> : null}
-        {cases.status === 'ready' ? <PublishPanel projectId={projectId} suite={suite} cases={cases.data} onPublished={() => { void data.reload(); void cases.reload(); }} /> : null}
+        {cases.error ? <ErrorState error={cases.error} what="approved cases" onRetry={cases.reload} retrying={cases.reloading} /> : null}
+        {cases.status === 'ready' && !cases.error && !data.error ? <PublishPanel key={`${projectId}:${suiteId}`} projectId={projectId} suite={suite} cases={cases.data} onPublished={() => { void data.reload(); void cases.reload(); }} /> : null}
       </Section>
     </div>
   );

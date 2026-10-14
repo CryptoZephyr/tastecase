@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Time } from '@/components/ui/data';
@@ -10,7 +10,7 @@ import { SkeletonRows } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { useApi } from '@/lib/api/context';
 import type { UiError } from '@/lib/api/result';
-import type { CatalogEntry, CatalogVersion, MappingConfirmation } from '@/lib/api/types';
+import type { CatalogEntry, CatalogVersion, CreateMappingConfirmationRequest, MappingConfirmation } from '@/lib/api/types';
 import { all, useResource } from '@/lib/api/use-resource';
 import { newId, SCHEMA_VERSION } from '@/lib/ids';
 
@@ -22,16 +22,27 @@ function MappingRow({ projectId, catalog, entry, mapping, onSaved }: {
   const api = useApi();
   const [custom, setCustom] = useState(false);
   const [entityId, setEntityId] = useState(entry.qlooEntityId ?? '');
-  const [requestId] = useState(newId);
+  const request = useRef<{ key: string; body: CreateMappingConfirmationRequest } | null>(null);
+  const sending = useRef(false);
+  const [saved, setSaved] = useState<MappingConfirmation | null>(null);
+  const confirmed = mapping ?? saved;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
   const valid = UUID.test(entityId.trim());
 
   async function confirm() {
+    if (!valid || sending.current) return;
+    const content = { schema_version: SCHEMA_VERSION, catalogVersionId: catalog.id, catalogEntryId: entry.id, qlooEntityId: entityId.trim().toLowerCase() };
+    const key = JSON.stringify(content);
+    const body = request.current?.key === key ? request.current.body : { ...content, id: newId() };
+    request.current = { key, body };
+    sending.current = true;
     setPending(true); setError(null);
-    const result = await api.mappings.create(projectId, { schema_version: SCHEMA_VERSION, id: requestId, catalogVersionId: catalog.id, catalogEntryId: entry.id, qlooEntityId: entityId.trim().toLowerCase() });
+    const result = await api.mappings.create(projectId, body);
+    sending.current = false;
     setPending(false);
-    if (result.ok) onSaved(); else setError(result.error);
+    if (result.ok) { setSaved(result.data); request.current = null; onSaved(); }
+    else { setError(result.error); if (result.error.kind === 'conflict') onSaved(); }
   }
 
   return (
@@ -41,17 +52,17 @@ function MappingRow({ projectId, catalog, entry, mapping, onSaved }: {
         <p className="font-mono text-meta text-ink-2 break-all">{entry.id}</p>
       </div>
       <div className="min-w-0 space-y-2">
-        {mapping ? (
+        {confirmed ? (
           <>
             <Badge>Confirmed</Badge>
-            <p className="text-meta text-ink-2">Qloo entity <code className="break-all">{mapping.qlooEntityId}</code> · <Time iso={mapping.createdAt} /></p>
+            <p className="text-meta text-ink-2">Qloo entity <code className="break-all">{confirmed.qlooEntityId}</code> · <Time iso={confirmed.createdAt} /></p>
           </>
         ) : entry.qlooEntityId && !custom ? (
           <>
             <p className="text-control">Candidate Qloo entity <code className="break-all">{entry.qlooEntityId}</code> — supplied with your catalog, not yet confirmed.</p>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onPress={() => void confirm()} isPending={pending} pendingLabel="Confirming">Confirm this match</Button>
-              <Button variant="text" onPress={() => { setCustom(true); setEntityId(''); }}>Use a different ID</Button>
+              <Button variant="text" isDisabled={pending} onPress={() => { setCustom(true); setEntityId(''); }}>Use a different ID</Button>
             </div>
           </>
         ) : (
@@ -59,7 +70,7 @@ function MappingRow({ projectId, catalog, entry, mapping, onSaved }: {
             {!custom ? <p className="text-control text-ink-2">No Qloo candidate. Unless you confirm one, this restaurant stays unmapped and its ranking coverage is shown as unavailable.</p> : null}
             {custom || !entry.qlooEntityId ? (
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                <Field label={`Qloo entity ID for ${entry.name}`} value={entityId} onChange={setEntityId} mono className="flex-1"
+                <Field label={`Qloo entity ID for ${entry.name}`} value={entityId} onChange={setEntityId} isDisabled={pending} mono className="flex-1"
                   errorMessage={entityId && !valid ? 'Enter a Qloo entity UUID.' : null} />
                 <Button variant="secondary" onPress={() => void confirm()} isPending={pending} isDisabled={!valid}>Confirm</Button>
               </div>
@@ -79,12 +90,12 @@ export function MappingStep({ projectId, refreshKey }: { projectId: string; refr
   return (
     <Section id="mappings" title="3. Confirm Qloo mappings" description="Tell TasteCase which public Qloo entity each restaurant is. Confirmations are explicit and immutable; TasteCase never confirms a guess for you.">
       {data.status === 'loading' ? <SkeletonRows rows={2} label="Loading catalog mappings" /> : null}
-      {data.status === 'error' ? <ErrorState error={data.error} what="catalog mappings" onRetry={data.reload} retrying={data.reloading} /> : null}
+      {data.error ? <ErrorState error={data.error} what="the latest catalog mappings (showing stale saved data if available)" onRetry={data.reload} retrying={data.reloading} /> : null}
       {data.status === 'ready' ? (() => {
         const [catalogs, mappings] = data.data;
         if (!catalogs.length) return <p className="text-ink-2">Import a catalog first; its restaurants will appear here.</p>;
         const catalog = catalogs.find(row => row.id === selected) ?? catalogs[catalogs.length - 1];
-        const confirmed = new Map(mappings.filter(row => row.catalogVersionId === catalog.id).map(row => [row.catalogEntryId, row]));
+        const confirmed = new Map(mappings.filter(row => row.catalogVersionId === catalog.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(row => [row.catalogEntryId, row]));
         return (
           <div className="space-y-4">
             {catalogs.length > 1 ? (
@@ -93,7 +104,7 @@ export function MappingStep({ projectId, refreshKey }: { projectId: string; refr
             ) : null}
             <p className="text-control text-ink-2">{confirmed.size} of {catalog.entries.length} restaurants confirmed. A discovery job can rank at most 10 mapped restaurants; larger sets are refused, not truncated.</p>
             <ul className="divide-y divide-rule rounded-panel border border-rule bg-surface">
-              {catalog.entries.map(entry => <MappingRow key={`${catalog.id}:${entry.id}`} projectId={projectId} catalog={catalog} entry={entry} mapping={confirmed.get(entry.id)} onSaved={() => void data.reload()} />)}
+              {catalog.entries.map(entry => <MappingRow key={`${projectId}:${catalog.id}:${entry.id}`} projectId={projectId} catalog={catalog} entry={entry} mapping={confirmed.get(entry.id)} onSaved={() => void data.reload()} />)}
             </ul>
           </div>
         );

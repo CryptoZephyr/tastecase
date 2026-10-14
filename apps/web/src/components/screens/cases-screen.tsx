@@ -11,6 +11,7 @@ import { EmptyState, ErrorState } from '@/components/ui/states';
 import { useApi } from '@/lib/api/context';
 import { useResource } from '@/lib/api/use-resource';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 
 const STATUS = {
   unreviewed: { label: 'Needs a decision', tone: 'advisory' },
@@ -22,7 +23,7 @@ const STATUS = {
 
 export function CasesScreen({ projectId }: { projectId: string }) {
   const api = useApi();
-  const cases = useResource(() => api.cases.list(projectId, { limit: 20 }), [api, projectId]);
+  const cases = useResource(() => loadOwnerHistory(window => api.cases.list(projectId, window)), [api, projectId]);
   return (
     <div className="space-y-8">
       <PageHeader title="Cases" description="Cases saved by discovery, with their current review decision. Approved cases can be published into an immutable suite." />
@@ -55,7 +56,7 @@ export function CasesScreen({ projectId }: { projectId: string }) {
               );
             })}
           </ul>
-          {cases.data.length === 20 ? <p className="text-meta text-ink-2">Showing the first 20 cases.</p> : null}
+          {cases.error ? <ErrorState error={cases.error} what="the latest complete case history (showing stale saved data)" onRetry={cases.reload} retrying={cases.reloading} /> : null}
         </>
       ) : null}
     </div>

@@ -13,6 +13,7 @@ import { useApi } from '@/lib/api/context';
 import type { ComparisonState } from '@/lib/api/types';
 import { useResource } from '@/lib/api/use-resource';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 
 export const COMPARISON_STATE: Record<ComparisonState, { label: string; tone: Tone; active: boolean }> = {
   queued: { label: 'Queued for your runner', tone: 'info', active: true },
@@ -25,7 +26,7 @@ export const COMPARISON_STATE: Record<ComparisonState, { label: string; tone: To
 
 export function ComparisonsScreen({ projectId }: { projectId: string }) {
   const api = useApi();
-  const list = useResource(() => api.comparisons.list(projectId, { limit: 20 }), [api, projectId], { pollWhile: rows => rows.some(row => COMPARISON_STATE[row.state].active) });
+  const list = useResource(() => loadOwnerHistory(window => api.comparisons.list(projectId, window)), [api, projectId], { pollWhile: rows => rows.some(row => COMPARISON_STATE[row.state].active) });
   return (
     <div className="space-y-8">
       <PageHeader title="Comparisons" description="Two explicitly named assistant versions run the same published cases, briefs and pinned evidence. Reports are frozen once finalized."

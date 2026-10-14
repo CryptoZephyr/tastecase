@@ -1,6 +1,6 @@
 import type {
-  Attempt, CatalogEntry, DiscoveryJobDetail, DiscoveryTargetAssociation, PracticalConstraints, RankingEvidence, ReviewCaseResponse,
-  ReviewRecord, SyntheticText,
+  ViewAttempt, CatalogEntry, ViewJobDetail, DiscoveryTargetAssociation, PracticalConstraints, RankingEvidence, ViewCaseResponse,
+  SyntheticText,
 } from '@/lib/api/types';
 
 export type ProfileId = 'a' | 'b';
@@ -30,7 +30,7 @@ export interface RankingView {
 }
 
 /** Captured output for one profile in one attempt slot. `attempt` is null when its record didn't load. */
-export interface SlotOutput { association: DiscoveryTargetAssociation; attempt: Attempt | null }
+export interface SlotOutput { association: DiscoveryTargetAssociation; attempt: ViewAttempt | null }
 
 export interface AttemptSlot {
   key: string;
@@ -78,15 +78,15 @@ export interface CaseView {
   coverage: Coverage;
   rankings: RankingView[];
   slots: AttemptSlot[];
-  head: ReviewCaseResponse['head'];
-  currentReview: ReviewRecord | null;
+  head: ViewCaseResponse['head'];
+  currentReview: ViewCaseResponse['currentReview'];
   catalog: CatalogIndex;
   evidenceCapturedAt: string | null;
   repeatCount: number;
   assistantVersion: string;
 }
 
-export function indexCatalog(job: DiscoveryJobDetail): CatalogIndex {
+export function indexCatalog(job: ViewJobDetail): CatalogIndex {
   const input = job.job.input.targetInput;
   const entries = input.catalog.entries;
   return {
@@ -106,7 +106,7 @@ export function entryFacts(catalog: CatalogIndex, id: string): EntryFacts {
 const slotLabel = (variant: 'full' | 'reduced_pair', round: number, repeat: number) =>
   variant === 'full' ? `Repeat ${repeat + 1}${round > 0 ? ` · round ${round + 1}` : ''}` : `Pair follow-up${repeat > 0 ? ` · repeat ${repeat + 1}` : ''}`;
 
-export function buildSlots(associations: DiscoveryTargetAssociation[], attempts: Map<string, Attempt>): AttemptSlot[] {
+export function buildSlots(associations: DiscoveryTargetAssociation[], attempts: Map<string, ViewAttempt>): AttemptSlot[] {
   const slots = new Map<string, AttemptSlot>();
   for (const association of associations) {
     const key = `${association.variant}:${association.round}:${association.repeat}`;
@@ -117,7 +117,7 @@ export function buildSlots(associations: DiscoveryTargetAssociation[], attempts:
   return [...slots.values()].sort((x, y) => (x.variant === y.variant ? 0 : x.variant === 'full' ? -1 : 1) || x.round - y.round || x.repeat - y.repeat);
 }
 
-export function computeCoverage(job: DiscoveryJobDetail, attempts: Map<string, Attempt>): Coverage {
+export function computeCoverage(job: ViewJobDetail, attempts: Map<string, ViewAttempt>): Coverage {
   const ranks = job.evidence.flatMap(row => (row.data.kind === 'rank' || row.data.kind === 'facts' ? [row.data] : []));
   const targets = job.attempts;
   const result = (id: string) => attempts.get(id)?.result ?? null;
@@ -136,16 +136,16 @@ export function computeCoverage(job: DiscoveryJobDetail, attempts: Map<string, A
   };
 }
 
-export function rankingViews(job: DiscoveryJobDetail): RankingView[] {
+export function rankingViews(job: ViewJobDetail): RankingView[] {
   return job.evidence.flatMap(row => row.data.kind === 'rank' ? [{
     evidenceId: row.id, profileId: row.data.profileId, scope: row.data.scope, providerStatus: row.data.providerStatus,
     requested: row.data.requestedEntryIds, ordered: row.data.orderedEntryIds, missing: row.data.missingEntryIds, unmapped: row.data.unmappedEntryIds,
-    capturedAt: row.capturedAt, checksum: row.checksum, errorCode: row.data.error?.code,
+    capturedAt: row.capturedAt, checksum: row.checksum, errorCode: 'error' in row.data ? row.data.error?.code : undefined,
   }] : []);
 }
 
 /** Builds the review view. Profiles come from the briefs actually present: a single brief never gains an invented Profile B. */
-export function buildCaseView(response: ReviewCaseResponse, job: DiscoveryJobDetail, attemptList: Attempt[]): CaseView {
+export function buildCaseView(response: ViewCaseResponse, job: ViewJobDetail, attemptList: ViewAttempt[]): CaseView {
   const attempts = new Map(attemptList.map(attempt => [attempt.id, attempt]));
   const content = response.candidate.content;
   const request = job.job.input.request;
@@ -193,8 +193,8 @@ export function outputState(output: SlotOutput | undefined): OutputState {
   const result = output.attempt?.result;
   if (!output.attempt || !result) return { kind: 'unread' };
   if (result.outcome === 'success') return { kind: 'success', recommendations: result.output.recommendations, text: result.output.text, trace: result.trace.completeness };
-  if (result.outcome === 'malformed_output') return { kind: 'malformed', code: result.error.code, message: result.error.message, trace: result.trace.completeness };
-  return { kind: 'unavailable', code: result.error.code, message: result.error.message, retryable: result.retryable, trace: result.trace.completeness };
+  if (result.outcome === 'malformed_output') return { kind: 'malformed', code: 'error' in result ? result.error.code : 'malformed_output', message: 'error' in result ? result.error.message : 'Provider error details are omitted from the public sample.', trace: result.trace.completeness };
+  return { kind: 'unavailable', code: 'error' in result ? result.error.code : 'provider_unavailable', message: 'error' in result ? result.error.message : 'Provider error details are omitted from the public sample.', retryable: result.retryable, trace: result.trace.completeness };
 }
 
 /** Code-computed description of where an entry appears; absence is stated, never inferred as preference. */

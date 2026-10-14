@@ -58,8 +58,8 @@ export function SampleScreen() {
             <CaseReview view={view} header={
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="info">{sample.data.provenance === 'live' ? 'Live run' : 'Recorded evidence'}</Badge>
-                  <span className="text-control text-ink-2">{sample.data.provenance === 'live' ? 'Processed' : 'Captured'} <Time iso={sample.data.capturedAt} /> · synthetic inputs</span>
+                  <Badge tone="info">Recorded evidence</Badge>
+                  <span className="text-control text-ink-2">Captured <Time iso={sample.data.capturedAt} /> · synthetic inputs</span>
                 </div>
                 <h1 className="text-title font-medium">Inspect a case</h1>
                 <p className="max-w-[64ch] text-ink-2">Read it top to bottom: constraints, the finding and its evidence limits, then each profile’s brief, the assistant’s answers and Qloo’s rankings. Select any restaurant to follow it across panels.</p>

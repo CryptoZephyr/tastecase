@@ -15,10 +15,11 @@ import { isUncertain, type UiError } from '@/lib/api/result';
 import { useResource } from '@/lib/api/use-resource';
 import { newId, SCHEMA_VERSION } from '@/lib/ids';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 
 export function SuitesScreen({ projectId }: { projectId: string }) {
   const api = useApi();
-  const suites = useResource(() => api.suites.list(projectId, { limit: 20 }), [api, projectId]);
+  const suites = useResource(() => loadOwnerHistory(window => api.suites.list(projectId, window)), [api, projectId]);
   const [name, setName] = useState('');
   const [requestId, setRequestId] = useState(newId);
   const [error, setError] = useState<UiError | null>(null);
@@ -37,6 +38,7 @@ export function SuitesScreen({ projectId }: { projectId: string }) {
     <div className="space-y-10">
       <PageHeader title="Suites" description="A suite collects approved cases. Each publication is an immutable version: later edits, rejections or runner results can’t change it." />
       <Section title="Your suites">
+        {suites.status === 'ready' && suites.error ? <ErrorState error={suites.error} what="the latest complete suite history (showing stale saved data)" onRetry={suites.reload} retrying={suites.reloading} /> : null}
         {suites.status === 'loading' ? <SkeletonRows rows={2} label="Loading suites" /> : null}
         {suites.status === 'error' ? <ErrorState error={suites.error} what="suites" onRetry={suites.reload} retrying={suites.reloading} /> : null}
         {suites.status === 'ready' && !suites.data.length ? <EmptyState title="No suites yet"><p>Create a suite below, then publish approved cases into it.</p></EmptyState> : null}

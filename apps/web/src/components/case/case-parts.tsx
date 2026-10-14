@@ -36,7 +36,7 @@ export function EntryChip({ id, name, prefix, note }: { id?: string; name?: stri
   const active = selected === id;
   return (
     <AriaButton onPress={() => select(active ? null : id)} aria-pressed={active}
-      className={cn('inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-control border px-2 py-1 text-left text-control transition-colors duration-150',
+      className={cn('inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-control border px-2 py-1 text-left text-control transition-colors duration-150',
         active ? 'border-action bg-champagne font-medium text-ink' : 'border-rule bg-surface hover:border-stroke',
         !facts.known && 'border-dashed')}>
       {active ? <Crosshair aria-hidden className="size-3.5 shrink-0" strokeWidth={2} /> : null}
@@ -70,7 +70,7 @@ export function SelectionSummary({ slot }: { slot: AttemptSlot | undefined }) {
     <div className="flex flex-wrap items-center gap-2 text-meta" aria-live="polite">
       <span className="font-medium text-ink">{name}</span>
       <span className="text-ink">{parts.join(' · ')}</span>
-      <AriaButton onPress={() => select(null)} className="min-h-9 rounded-control px-2 text-action underline-offset-4 hover:underline">Clear</AriaButton>
+      <AriaButton onPress={() => select(null)} className="min-h-11 rounded-control px-2 text-action underline-offset-4 hover:underline">Clear</AriaButton>
     </div>
   );
 }
@@ -81,7 +81,7 @@ export function PeekPin({ item, summary, label }: { item: PinnedItem; summary: s
   return (
     <TooltipTrigger delay={350}>
       <AriaButton onPress={() => pin(item)} aria-label={`Inspect ${label}`}
-        className="inline-flex min-h-9 items-center gap-1.5 rounded-control px-2 text-meta text-action hover:bg-subtle">
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2 text-meta text-action hover:bg-subtle">
         <PanelRightOpen aria-hidden className="size-4" strokeWidth={1.75} /> Inspect
       </AriaButton>
       <Tooltip offset={6} className="max-w-xs rounded-control bg-ink px-3 py-2 text-meta text-white shadow-float">{summary}</Tooltip>

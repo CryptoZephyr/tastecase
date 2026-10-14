@@ -9,7 +9,11 @@ import { Segmented } from '@/components/ui/choice';
 import { ErrorState } from '@/components/ui/states';
 import { useApi } from '@/lib/api/context';
 import type { UiError } from '@/lib/api/result';
-import type { ComparisonPlan, ComparisonRepeatResult } from '@/lib/api/types';
+import type { ComparisonPlan, ComparisonRepeatResult, SuiteVersion } from '@/lib/api/types';
+import { useResource } from '@/lib/api/use-resource';
+import { Time } from '@/components/ui/data';
+import { formatMoney } from '@/lib/format';
+import { loadComparisonSuite, pinnedCaseEvidence } from '@/lib/view/comparison-evidence';
 import { cn } from '@/lib/cn';
 import { behaviourText, positionChanges, type CaseRow, type ProfileRow, type RepeatPair } from '@/lib/view/comparison-view';
 import { describeExpectation } from '@/lib/view/expectation-text';
@@ -37,11 +41,11 @@ function Recommendations({ result, name }: { result: ComparisonRepeatResult | un
   return <ol className="space-y-1 text-control">{result.result.recommendationIds.map((id, index) => <li key={index}>{index + 1}. {name(id)}</li>)}</ol>;
 }
 
-function RoleColumn({ role, version, result, name }: { role: 'baseline' | 'candidate'; version: string; result: ComparisonRepeatResult | undefined; name: (id: string | null) => string }) {
+function RoleColumn({ role, version, result, name, changesOnly = false }: { role: 'baseline' | 'candidate'; version: string; result: ComparisonRepeatResult | undefined; name: (id: string | null) => string; changesOnly?: boolean }) {
   return (
     <div className="min-w-0 space-y-2 rounded-control border border-rule p-3">
-      <div className="flex flex-wrap items-center gap-2"><RoleTag role={role} version={version} />{result ? <OutcomeBadge outcome={result.outcome} /> : null}{result?.result.traceCompleteness ? <TraceBadge completeness={result.result.traceCompleteness} /> : null}</div>
-      <Recommendations result={result} name={name} />
+      <div className="flex flex-wrap items-center gap-2"><RoleTag role={role} version={version} />{result ? <OutcomeBadge outcome={result.outcome} /> : null}<TraceBadge completeness={result?.result.traceCompleteness ?? null} /></div>
+      {!changesOnly || !result || result.result.outcome !== 'success' ? <Recommendations result={result} name={name} /> : null}
       {result ? <ul className="space-y-0.5 text-meta text-ink-2">{result.rules.map(rule => <li key={rule.ruleIndex}>{CLASS_LABEL[rule.classification]} · rule {rule.ruleIndex + 1}: {REASON[rule.reason]}</li>)}</ul> : null}
       {result && (result.dispatchCount > 1 || result.uncertainDispatches) ? <p className="text-meta text-ink-2">{result.dispatchCount} dispatches{result.uncertainDispatches ? `, ${result.uncertainDispatches} interrupted` : ''}</p> : null}
     </div>
@@ -97,22 +101,62 @@ function ChangesOnly({ pair, name }: { pair: RepeatPair; name: (id: string | nul
   );
 }
 
-function ProfileSection({ projectId, plan, row, profile, changesOnly }: { projectId: string; plan: ComparisonPlan; row: CaseRow; profile: ProfileRow; changesOnly: boolean }) {
+function SharedConstraints({ row }: { row: CaseRow }) {
+  const input = row.planCase.inputs[row.profiles[0].profile];
+  const c = input.task.constraints;
+  const name = names(row.planCase, row.profiles[0].profile);
+  const items = [
+    ['Party size', String(c.partySize)],
+    ['Location', c.location ? `${c.location.city}${c.location.countryCode ? `, ${c.location.countryCode}` : ''}` : 'Not specified'],
+    ['Budget per person', c.budgetPerPerson ? formatMoney(c.budgetPerPerson.amountMinor, c.budgetPerPerson.currency) : 'Not specified'],
+    ['Dietary', c.dietaryRequirements.join(', ') || 'None stated'],
+    ['Accessibility', c.accessibilityRequirements.join(', ') || 'None stated'],
+    ['Required cuisines', c.requiredCuisines.join(', ') || 'None stated'],
+    ['Eligible restaurants', `${input.eligibleCatalogEntryIds.length} of ${input.catalog.entries.length} in ${input.catalog.label}`],
+    ['Excluded', c.excludedEntryIds.map(name).join(', ') || 'None'],
+  ];
+  return <section aria-label="Shared constraints" className="rounded-panel bg-subtle p-4">
+    <p className="text-control font-medium">Shared constraints — unchanged across profiles, releases and repeats</p>
+    <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">{items.map(([term, detail]) => <div key={term}><dt className="text-meta text-ink-2">{term}</dt><dd className="text-control break-words">{detail}</dd></div>)}</dl>
+  </section>;
+}
+
+function FrozenRankings({ row, profile, suite }: { row: CaseRow; profile: 'a' | 'b'; suite?: SuiteVersion }) {
+  const evidence = pinnedCaseEvidence(suite, row.planCase);
+  const ranks = evidence?.evidence.flatMap(ref => ref.data.kind === 'rank' && ref.data.profileId === profile ? [{ record: ref, rank: ref.data }] : []) ?? [];
+  const name = names(row.planCase, profile);
+  return <div className="space-y-3 text-control" aria-label="Pinned cultural evidence">
+    <p className="font-medium">Pinned cultural evidence · frozen at approval</p>
+    {!evidence ? <p className="text-ink-2">Exact published snapshot unavailable or still loading; no ranking coverage is assumed.</p> : <>
+      <p className="text-meta text-ink-2">Evidence captured <Time iso={evidence.capturedAt} /> · {evidence.coverage.completedFullAttempts} of {evidence.coverage.intendedFullAttempts} intended discovery runs completed.</p>
+      {!ranks.length ? <p>No Qloo ranking captured for this brief.</p> : null}
+      {ranks.map(({ record, rank }) => <div key={record.id} className="space-y-1 rounded-control bg-subtle p-3">
+        <p>{rank.scope === 'full' ? 'Full catalog ranking' : 'Two-restaurant follow-up'} · Qloo: {rank.providerStatus} · {rank.orderedEntryIds.length} of {rank.requestedEntryIds.length} ranked</p>
+        <p className="text-meta text-ink-2">Captured <Time iso={record.capturedAt} /> · within-query order only</p>
+        {rank.orderedEntryIds.length ? <ol>{rank.orderedEntryIds.map((id, index) => <li key={id}>{index + 1}. {name(id)}</li>)}</ol> : <p>No ranking established.</p>}
+        <p>Missing: {rank.missingEntryIds.map(name).join(', ') || 'none recorded'} · Unmapped: {rank.unmappedEntryIds.map(name).join(', ') || 'none recorded'}</p>
+      </div>)}
+    </>}
+    <p className="text-meta text-ink-2">Not refreshed from Qloo. Missing evidence is unavailable, not a negative preference.</p>
+  </div>;
+}
+
+function ProfileSection({ projectId, plan, row, profile, changesOnly, suite }: { projectId: string; plan: ComparisonPlan; row: CaseRow; profile: ProfileRow; changesOnly: boolean; suite?: SuiteVersion }) {
   const name = names(row.planCase, profile.profile);
   const brief = row.planCase.inputs[profile.profile].task.syntheticBrief;
   return (
-    <section aria-label={`Profile ${profile.profile.toUpperCase()}`} className="space-y-3 rounded-panel border border-rule bg-surface p-4">
-      <ProfileTag profile={profile.profile} />
+    <section aria-label={row.profiles.length === 1 ? 'Case brief' : `Profile ${profile.profile.toUpperCase()}`} className="space-y-3 rounded-panel border border-rule bg-surface p-4">
+      <ProfileTag profile={row.profiles.length === 1 ? 'single' : profile.profile} />
       <div className="rounded-control bg-subtle p-3"><p className="text-meta text-ink-2">Pinned brief · {brief.label}</p><p className="mt-1 text-control whitespace-pre-wrap">{brief.text}</p></div>
+      <FrozenRankings row={row} profile={profile.profile} suite={suite} />
       {profile.repeats.map(pair => (
         <div key={pair.repeat} className="space-y-2 border-t border-rule pt-3">
           <p className="text-control font-medium">Repeat {pair.repeat + 1} <span className="font-normal text-ink-2">· {pair.behaviour === 'changed' ? 'recommendations changed' : pair.behaviour === 'unchanged' ? 'recommendations unchanged' : 'not comparable'}</span></p>
-          {changesOnly ? <ChangesOnly pair={pair} name={name} /> : (
-            <div className="grid gap-3 xl:grid-cols-2">
-              <RoleColumn role="baseline" version={plan.request.baselineVersion} result={pair.baseline} name={name} />
-              <RoleColumn role="candidate" version={plan.request.candidateVersion} result={pair.candidate} name={name} />
-            </div>
-          )}
+          <div className="grid gap-3 xl:grid-cols-2">
+            <RoleColumn role="baseline" version={plan.request.baselineVersion} result={pair.baseline} name={name} changesOnly={changesOnly} />
+            <RoleColumn role="candidate" version={plan.request.candidateVersion} result={pair.candidate} name={name} changesOnly={changesOnly} />
+          </div>
+          {changesOnly ? <ChangesOnly pair={pair} name={name} /> : null}
           <TextDiff projectId={projectId} pair={pair} />
         </div>
       ))}
@@ -122,13 +166,17 @@ function ProfileSection({ projectId, plan, row, profile, changesOnly }: { projec
 }
 
 export function ReportTable({ projectId, plan, rows }: { projectId: string; plan: ComparisonPlan; rows: CaseRow[] }) {
+  const api = useApi();
+  const suite = useResource(() => loadComparisonSuite(api, projectId, plan), [api, projectId, plan.request.suiteVersionId, plan.suiteChecksum]);
   const [open, setOpen] = useState<string | null>(null);
   const [mode, setMode] = useState<'full' | 'changes'>('full');
-  const caseName = (row: CaseRow) => `${row.planCase.inputs.a.task.syntheticBrief.label} / ${row.planCase.inputs.b.task.syntheticBrief.label}`;
+  const caseName = (row: CaseRow) => row.profiles.map(profile => row.planCase.inputs[profile.profile].task.syntheticBrief.label).join(' / ');
   return (
     <div className="space-y-4">
       <Segmented label="Output view" selectedKeys={[mode]} onSelectionChange={keys => { const [key] = [...keys]; if (key) setMode(key as 'full' | 'changes'); }}
         items={[{ id: 'full', label: 'Full outputs' }, { id: 'changes', label: 'Changes only' }]} />
+      {suite.status === 'loading' ? <p role="status" className="text-control text-ink-2">Loading exact published cultural evidence… No Qloo refresh.</p> : null}
+      {suite.error ? <ErrorState error={suite.error} what="the frozen published cultural evidence" onRetry={suite.reload} retrying={suite.reloading} /> : null}
       <ol className="space-y-3">
         {rows.map(row => {
           const expanded = open === row.caseId;
@@ -146,7 +194,7 @@ export function ReportTable({ projectId, plan, rows }: { projectId: string; plan
                 <ul className="mt-3 space-y-3 md:hidden" aria-label={`Outcomes for case ${row.index + 1}`}>
                   {row.profiles.map(profile => (
                     <li key={profile.profile} className="rounded-control border border-rule p-3">
-                      <ProfileTag profile={profile.profile} />
+                      <ProfileTag profile={row.profiles.length === 1 ? 'single' : profile.profile} />
                       <dl className="mt-2 space-y-2 text-control">
                         <div className="flex flex-wrap items-center gap-2"><dt><RoleTag role="baseline" version={plan.request.baselineVersion} /></dt><dd>{profile.baseline ? <OutcomeBadge outcome={profile.baseline.outcome} /> : '—'}</dd></div>
                         <div className="flex flex-wrap items-center gap-2"><dt><RoleTag role="candidate" version={plan.request.candidateVersion} /></dt><dd>{profile.candidate ? <OutcomeBadge outcome={profile.candidate.outcome} /> : '—'}</dd></div>
@@ -162,7 +210,7 @@ export function ReportTable({ projectId, plan, rows }: { projectId: string; plan
                     <tbody className="divide-y divide-rule">
                       {row.profiles.map(profile => (
                         <tr key={profile.profile}>
-                          <th scope="row" className="py-2 pr-3 font-normal"><ProfileTag profile={profile.profile} /></th>
+                          <th scope="row" className="py-2 pr-3 font-normal"><ProfileTag profile={row.profiles.length === 1 ? 'single' : profile.profile} /></th>
                           <td className="py-2 pr-3">{profile.baseline ? <OutcomeBadge outcome={profile.baseline.outcome} /> : '—'}</td>
                           <td className="py-2 pr-3">{profile.candidate ? <OutcomeBadge outcome={profile.candidate.outcome} /> : '—'}</td>
                           <td className="py-2">{behaviourText(profile)}</td>
@@ -173,8 +221,15 @@ export function ReportTable({ projectId, plan, rows }: { projectId: string; plan
                 </div>
               </div>
               {expanded ? (
-                <div className={cn('grid gap-4 border-t border-rule bg-canvas/40 p-4', row.profiles.length > 1 && '2xl:grid-cols-2')}>
-                  {row.profiles.map(profile => <ProfileSection key={profile.profile} projectId={projectId} plan={plan} row={row} profile={profile} changesOnly={mode === 'changes'} />)}
+                <div className="space-y-4 border-t border-rule bg-canvas/40 p-4">
+                  <SharedConstraints row={row} />
+                  <p className="text-meta text-ink-2">Frozen cultural evidence is advisory, not individual taste or a correctness score. Missing or unranked candidates are unavailable, not disliked. Missing trace can’t prove a missing tool call.</p>
+                  <ul className="space-y-1 text-meta text-ink-2" aria-label="Pinned evidence references">
+                    {row.planCase.evidenceReferences.map(ref => <li key={ref.id}>{ref.kind} · {ref.providerStatus ?? 'No provider status'} · missing {ref.missingEntryIds.join(', ') || 'none recorded'} · unmapped {ref.unmappedEntryIds.join(', ') || 'none recorded'}</li>)}
+                  </ul>
+                  <div className={cn('grid gap-4', row.profiles.length > 1 && '2xl:grid-cols-2')}>
+                    {row.profiles.map(profile => <ProfileSection key={profile.profile} projectId={projectId} plan={plan} row={row} profile={profile} changesOnly={mode === 'changes'} suite={suite.status === 'ready' ? suite.data : undefined} />)}
+                  </div>
                 </div>
               ) : null}
             </li>

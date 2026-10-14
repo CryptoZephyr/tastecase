@@ -29,8 +29,7 @@
   --color-info: #245a91;
   --color-info-bg: #edf4fb;
 
-  --font-sans: var(--font-plex-sans), "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-serif: var(--font-instrument-serif), "Instrument Serif", Georgia, serif;
+  --font-sans: var(--font-manrope), "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 
   --text-meta: 0.8125rem;

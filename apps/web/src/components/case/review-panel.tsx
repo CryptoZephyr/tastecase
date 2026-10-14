@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { useSession } from '@/components/app/session';
 import { RadioCard, RadioGroup } from '@/components/ui/choice';
 import { Facts, Hash, Time } from '@/components/ui/data';
 import { Field } from '@/components/ui/field';
@@ -10,13 +11,23 @@ import { ErrorState, Receipt } from '@/components/ui/states';
 import { ClassBadge } from '@/components/ui/badge';
 import { useApi } from '@/lib/api/context';
 import { isUncertain, type UiError } from '@/lib/api/result';
-import type { ReviewDecisionRequest, ReviewRecord } from '@/lib/api/types';
+import type { ReviewDecisionRequest } from '@/lib/api/types';
+import { z } from 'zod';
 import { newId, SCHEMA_VERSION } from '@/lib/ids';
 import type { CaseView } from '@/lib/view/case-view';
 import { buildExpectation, ExpectationEditor, initialExpectationDraft, type ExpectationDraft } from './expectation-editor';
 
 type Action = 'accept' | 'edit' | 'reject' | 'defer';
 interface Draft { action: Action | null; rationale: string; expectation: ExpectationDraft }
+const strings = z.array(z.string().max(2000)).max(500);
+const storedDraft = z.object({
+  version: z.literal(1), candidateId: z.uuid(),
+  draft: z.object({ action: z.enum(['accept', 'edit', 'reject', 'defer']).nullable(), rationale: z.string().max(4000), expectation: z.object({
+    classification: z.enum(['advisory', 'approved_policy', 'objective_contract']), advisoryRationale: z.string().max(4000),
+    policyRules: z.array(z.object({ key: z.string(), kind: z.enum(['recommend_any', 'avoid', 'order']), profileId: z.enum(['a', 'b']), entryIds: strings, before: z.string(), after: z.string() })).max(500),
+    objectiveProfiles: z.array(z.enum(['a', 'b'])).max(2), objectiveRules: z.array(z.enum(['output_schema', 'allowed_ids', 'exclusions'])).max(3), exclusionIds: strings,
+  }) }), request: z.object({ id: z.uuid(), key: z.string().max(65536), draftKey: z.string().max(131072) }).nullable().optional(),
+});
 
 const ACTION_COPY: Record<Action, { title: string; description: string }> = {
   accept: { title: 'Accept as advisory', description: 'Keep the proposed expectation unchanged. It stays advisory and never fails automatically.' },
@@ -27,19 +38,20 @@ const ACTION_COPY: Record<Action, { title: string; description: string }> = {
 
 type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never;
 
-const storageKey = (caseId: string) => `tastecase:review-draft:${caseId}`;
+export const reviewDraftKey = (ownerId: string, projectId: string, caseId: string) => `tastecase:review-draft:${ownerId}:${projectId}:${caseId}`;
 
-export function ReceiptFacts({ record }: { record: ReviewRecord }) {
+export function ReceiptFacts({ record }: { record: NonNullable<CaseView['currentReview']> }) {
   const { decision, expectationVersion } = record;
-  const coverage = decision.evidence.coverage;
+  const evidence = 'evidence' in decision ? decision.evidence : null;
+  const coverage = evidence?.coverage;
   return (
     <Facts items={[
       ['Decision', ACTION_COPY[decision.action].title], ['Revision', decision.revision], ['Saved', <Time key="t" iso={decision.createdAt} />],
       ['Rationale', decision.rationale],
       ['Expectation', expectationVersion ? <ClassBadge key="c" classification={expectationVersion.expectation.classification} /> : 'None approved'],
-      ['Pinned evidence', `${coverage.completedFullAttempts} of ${coverage.intendedFullAttempts} intended full runs completed`],
+      ['Pinned evidence', coverage ? `${coverage.completedFullAttempts} of ${coverage.intendedFullAttempts} intended full runs completed` : 'Private review snapshot omitted from public sample'],
       ['Receipt checksum', <Hash key="h" value={decision.checksum} label="receipt checksum" />],
-      ['Evidence checksum', <Hash key="e" value={decision.evidence.checksum} label="evidence checksum" />],
+      ...(evidence ? [['Evidence checksum', <Hash key="e" value={evidence.checksum} label="evidence checksum" />] as [string, ReactNode]] : []),
       ...(expectationVersion ? [['Expectation version', <Hash key="v" value={expectationVersion.id} label="expectation version ID" />] as [string, ReactNode]] : []),
     ]} />
   );
@@ -47,37 +59,62 @@ export function ReceiptFacts({ record }: { record: ReviewRecord }) {
 
 export function ReviewPanel({ view, onSaved, onReloadLatest }: { view: CaseView; onSaved: () => void; onReloadLatest: () => Promise<void> }) {
   const api = useApi();
+  const session = useSession();
+  const owner = session.status === 'signed_in' ? session.session.userId : null;
+  const key = owner ? reviewDraftKey(owner, view.projectId, view.caseId) : null;
   const [draft, setDraft] = useState<Draft>(() => ({ action: null, rationale: '', expectation: initialExpectationDraft(view) }));
   const [restored, setRestored] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<UiError | null>(null);
   const [pending, setPending] = useState(false);
-  const [receipt, setReceipt] = useState<ReviewRecord | null>(null);
-  const pendingRequest = useRef<{ id: string; key: string } | null>(null);
+  const [receipt, setReceipt] = useState<CaseView['currentReview']>(null);
+  const pendingRequest = useRef<{ id: string; key: string; draftKey: string } | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const sending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const dirty = Boolean(draft.action || draft.rationale.trim());
 
   useEffect(() => {
-    const saved = sessionStorage.getItem(storageKey(view.caseId));
-    if (!saved) return;
-    try { setDraft(JSON.parse(saved) as Draft); setRestored(true); } catch { sessionStorage.removeItem(storageKey(view.caseId)); }
-  }, [view.caseId]);
+    if (!key) return;
+    try {
+      // Never migrate an unscoped legacy draft into a newly verified owner.
+      sessionStorage.removeItem(`tastecase:review-draft:${view.caseId}`);
+      const saved = sessionStorage.getItem(key);
+      if (!saved) return;
+      if (saved.length > 262144) { sessionStorage.removeItem(key); return; }
+      const parsed = storedDraft.safeParse(JSON.parse(saved));
+      if (!parsed.success || parsed.data.candidateId !== view.candidateId) { sessionStorage.removeItem(key); return; }
+      const value = parsed.data;
+      setDraft(value.draft); setRestored(true);
+      if (value.request) {
+        try {
+          const body = JSON.parse(value.request.key);
+          if (body.schema_version === SCHEMA_VERSION && Number.isSafeInteger(body.expectedRevision) && body.expectedRevision >= 0 && ['accept', 'edit', 'reject', 'defer'].includes(body.action) && typeof body.rationale === 'string') pendingRequest.current = value.request;
+        } catch { /* Reject malformed retry metadata without discarding a valid draft. */ }
+      }
+    } catch { /* A blocked storage area doesn't prevent reviewing. */ }
+  }, [key, view.caseId, view.candidateId]);
 
   useEffect(() => {
-    if (dirty) sessionStorage.setItem(storageKey(view.caseId), JSON.stringify(draft));
+    if (dirty && key) { try { sessionStorage.setItem(key, JSON.stringify({ version: 1, candidateId: view.candidateId, draft, request: pendingRequest.current })); } catch { /* Keep the in-memory draft. */ } }
     const warn = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [draft, dirty, view.caseId]);
+  }, [draft, dirty, key, view.candidateId]);
 
   // If an unconfirmed submission actually saved, the reloaded head points at its request ID.
   useEffect(() => {
     const request = pendingRequest.current;
     if (request && view.currentReview?.decision.id === request.id) {
       setReceipt(view.currentReview); setError(null); pendingRequest.current = null;
-      sessionStorage.removeItem(storageKey(view.caseId));
-      setDraft({ action: null, rationale: '', expectation: initialExpectationDraft(view) });
+      if (request.draftKey === JSON.stringify(draftRef.current)) {
+        if (owner) { try { sessionStorage.removeItem(reviewDraftKey(owner, view.projectId, view.caseId)); } catch { /* storage unavailable */ } }
+        setDraft({ action: null, rationale: '', expectation: initialExpectationDraft(view) });
+      }
     }
-  }, [view]);
+  }, [view, owner]);
 
   function body(): WithoutId<ReviewDecisionRequest> | null {
     const next: Record<string, string> = {};
@@ -93,19 +130,28 @@ export function ReviewPanel({ view, onSaved, onReloadLatest }: { view: CaseView;
   }
 
   async function submit() {
-    const content = body();
+    if (sending.current) return;
+    const content = pendingRequest.current?.draftKey === JSON.stringify(draft) ? JSON.parse(pendingRequest.current.key) as WithoutId<ReviewDecisionRequest> : body();
     if (!content) return;
     const key = JSON.stringify(content);
     // Same unchanged body keeps the same request ID, so an uncertain retry can't double-apply.
     const id = pendingRequest.current?.key === key ? pendingRequest.current.id : newId();
-    pendingRequest.current = { id, key };
+    const draftKey = JSON.stringify(draft);
+    pendingRequest.current = { id, key, draftKey };
+    if (owner) { try { sessionStorage.setItem(reviewDraftKey(owner, view.projectId, view.caseId), JSON.stringify({ version: 1, candidateId: view.candidateId, draft, request: pendingRequest.current })); } catch { /* In-memory retry remains available. */ } }
+    sending.current = true;
     setPending(true); setError(null);
     const result = await api.cases.review(view.projectId, view.caseId, { ...content, id } as ReviewDecisionRequest);
+    sending.current = false;
+    if (!mounted.current) return;
     setPending(false);
     if (result.ok) {
       setReceipt(result.data.review); pendingRequest.current = null;
-      sessionStorage.removeItem(storageKey(view.caseId));
-      setDraft({ action: null, rationale: '', expectation: initialExpectationDraft(view) });
+      // A receipt confirms the submitted snapshot, not edits made while it was in flight.
+      if (draftKey === JSON.stringify(draftRef.current)) {
+        if (owner) { try { sessionStorage.removeItem(reviewDraftKey(owner, view.projectId, view.caseId)); } catch { /* storage unavailable */ } }
+        setDraft({ action: null, rationale: '', expectation: initialExpectationDraft(view) });
+      }
       onSaved();
     } else setError(result.error);
   }
@@ -149,7 +195,7 @@ export function ReviewPanel({ view, onSaved, onReloadLatest }: { view: CaseView;
         {Object.keys(errors).length ? <p role="alert" className="text-control font-medium text-failed">Fix the highlighted fields. Your draft is kept.</p> : null}
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" isPending={pending} pendingLabel="Saving decision">Save decision</Button>
-          {dirty ? <Button variant="text" onPress={() => { sessionStorage.removeItem(storageKey(view.caseId)); setDraft({ action: null, rationale: '', expectation: initialExpectationDraft(view) }); setErrors({}); setRestored(false); }}>Discard draft</Button> : null}
+          {dirty ? <Button variant="text" isDisabled={pending} onPress={() => { if (owner) { try { sessionStorage.removeItem(reviewDraftKey(owner, view.projectId, view.caseId)); } catch { /* storage unavailable */ } } setDraft({ action: null, rationale: '', expectation: initialExpectationDraft(view) }); setErrors({}); setRestored(false); }}>Discard draft</Button> : null}
         </div>
       </form>
     </section>

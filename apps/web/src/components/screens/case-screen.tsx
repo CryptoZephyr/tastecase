@@ -13,6 +13,7 @@ import type { ApiResult } from '@/lib/api/result';
 import type { Attempt } from '@/lib/api/types';
 import { useResource } from '@/lib/api/use-resource';
 import { routes } from '@/lib/routes';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 import { buildCaseView, entryFacts, type CaseView } from '@/lib/view/case-view';
 
 /** Loads the case, its discovery job and every completed attempt. Unreadable attempts stay labelled as unread. */
@@ -23,6 +24,8 @@ export async function loadCaseView(api: TasteCaseApi, projectId: string, caseId:
   if (!job.ok) return job;
   const ids = job.data.attempts.filter(row => row.status === 'completed').map(row => row.attemptId);
   const attempts = await Promise.all(ids.map(id => api.attempts.get(projectId, id)));
+  const accessFailure = attempts.find(result => !result.ok && (['unauthorized', 'forbidden', 'not_found'].includes(result.error.kind) || [401, 403, 404].includes(result.error.status ?? 0)));
+  if (accessFailure && !accessFailure.ok) return accessFailure;
   const loaded = attempts.flatMap(result => (result.ok ? [result.data] : [])) as Attempt[];
   return { ok: true, data: buildCaseView(response.data, job.data, loaded) };
 }
@@ -31,13 +34,13 @@ const STATUS_LABEL = { unreviewed: 'Not reviewed', accepted: 'Accepted (advisory
 
 function History({ projectId, caseId }: { projectId: string; caseId: string }) {
   const api = useApi();
-  const history = useResource(() => api.cases.history(projectId, caseId, { limit: 20 }), [api, projectId, caseId]);
+  const history = useResource(() => loadOwnerHistory(window => api.cases.history(projectId, caseId, window)), [api, projectId, caseId]);
   return (
     <details className="rounded-panel border border-rule bg-surface p-4">
       <summary className="min-h-11 cursor-pointer py-2 font-medium">Decision history</summary>
       <div className="mt-3 space-y-4">
         {history.status === 'loading' ? <p className="text-ink-2" role="status">Loading history…</p> : null}
-        {history.status === 'error' ? <ErrorState error={history.error} what="decision history" onRetry={history.reload} retrying={history.reloading} /> : null}
+        {history.error ? <ErrorState error={history.error} what="decision history" onRetry={history.reload} retrying={history.reloading} /> : null}
         {history.status === 'ready' && !history.data.length ? <p className="text-ink-2">No decisions yet.</p> : null}
         {history.status === 'ready' ? history.data.map(record => (
           <div key={record.decision.id} className="border-t border-rule pt-4 first:border-0 first:pt-0"><ReceiptFacts record={record} /></div>
@@ -71,7 +74,7 @@ export function CaseScreen({ projectId, caseId }: { projectId: string; caseId: s
           <Link href={routes.job(projectId, data.jobId)} className="inline-flex min-h-11 items-center text-control text-action underline underline-offset-4">Open the discovery job</Link>
         </div>
       }
-      decision={<ReviewPanel view={data} onSaved={() => void view.reload()} onReloadLatest={view.reload} />}
+      decision={<ReviewPanel key={`${projectId}:${caseId}`} view={data} onSaved={() => void view.reload()} onReloadLatest={view.reload} />}
       history={<History projectId={projectId} caseId={caseId} />}
     />
   );

@@ -25,7 +25,8 @@ export const start: DocSection = {
         </ul>
         <H2 id="status">Current status</H2>
         <Callout kind="implemented">The backend API, discovery worker, review and immutable suites, comparisons, exports and the local runner are implemented and were verified on 2026-10-13. See <Link href="/docs/proof/verified-evidence">Verified integration evidence</Link>.</Callout>
-        <Callout kind="planned">This web app is built against the API contracts, but connecting it to a hosted API and the public sample endpoint is still pending. Until then, screens show an honest “not connected” state instead of data.</Callout>
+        <Callout kind="implemented">The web app uses the production API connection through a bounded same-origin proxy. Private requests require a verified Supabase session. Local integration checks cover stored receipts; they do not prove a deployed app or browser workflow.</Callout>
+        <Callout kind="limitation">Hosted API and Supabase configuration, and a dedicated recorded public sample, still need provisioning and verification. Missing configuration shows “not connected” or unavailable, never stand-in results.</Callout>
       </>
     ),
   },
@@ -50,7 +51,8 @@ export const start: DocSection = {
           <li><strong>Hover or focus “Inspect”</strong> for a short preview; activate it (or tap on touch screens) to pin the full evidence record in the inspector.</li>
         </ul>
         <H2 id="sample-status">Sample availability</H2>
-        <Callout kind="planned">The public sample needs a sample endpoint on the hosted API, which doesn’t exist yet. Until it does, <Link href="/sample">Inspect a case</Link> shows the actual unavailable state and no stand-in results.</Callout>
+        <Callout kind="implemented">The anonymous, read-only sample endpoint is implemented. It exposes only one server-selected recorded case with explicitly approved synthetic inputs, captured ranking evidence and an assistant result. It does not accept project or case selectors, use your owner session, or start new provider calls.</Callout>
+        <Callout kind="limitation">A genuine dedicated sample has not been provisioned or verified through this web app. If its configuration or required evidence is missing, <Link href="/sample">Inspect a case</Link> shows unavailable and no stand-in results. Local tests use explicitly simulated provider evidence, not a publishable demonstration.</Callout>
       </>
     ),
   },

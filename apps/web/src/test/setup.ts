@@ -8,8 +8,10 @@ vi.mock('next/navigation', () => ({
   notFound: () => { throw new Error('NEXT_NOT_FOUND'); },
 }));
 
-if (!window.matchMedia) {
+if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query: string) => ({ matches: false, media: query, onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false });
 }
 
-afterEach(() => { cleanup(); sessionStorage.clear(); });
+afterEach(() => {
+  if (typeof window !== 'undefined') { cleanup(); sessionStorage.clear(); }
+});

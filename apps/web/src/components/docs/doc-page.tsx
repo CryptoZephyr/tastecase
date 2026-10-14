@@ -23,7 +23,7 @@ export function DocPage({ group, slug }: { group: string; slug: string }) {
         <h1 className="mt-1 text-title font-medium">{doc.title}</h1>
         <p className="mt-2 max-w-[68ch] text-body text-ink-2">{doc.summary}</p>
         <details className="mt-6 rounded-control border border-rule bg-surface p-3 xl:hidden">
-          <summary className="min-h-9 cursor-pointer text-control font-medium">On this page</summary>
+          <summary className="min-h-11 cursor-pointer text-control font-medium">On this page</summary>
           <div className="mt-2">{toc}</div>
         </details>
         <div className="prose-doc mt-8"><content.Body /></div>

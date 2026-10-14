@@ -10,6 +10,7 @@ import { ErrorState } from '@/components/ui/states';
 import { useApi } from '@/lib/api/context';
 import type { UiError } from '@/lib/api/result';
 import type { ComparisonFinalReport } from '@/lib/api/types';
+import { quotePosix } from '@/lib/view/shell-quote';
 
 function save(filename: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -46,11 +47,11 @@ export function ExportPanel({ projectId, comparisonId, report }: { projectId: st
     setBusy(null);
   }
 
-  const replay = `export TASTECASE_ASSISTANT_VERSION="${report.candidateVersion}"
+  const replay = `export TASTECASE_ASSISTANT_VERSION=${quotePosix(report.candidateVersion)}
 node packages/runner/dist/cli.js replay \\
-  --pack ./tastecase-pack-${short}.json --role candidate \\
-  --pack-checksum ${packChecksum ?? '<pack checksum shown after download>'} \\
-  --report ./replay-candidate-${short}.json`;
+  --pack ${quotePosix(`./tastecase-pack-${short}.json`)} --role candidate \\
+  --pack-checksum ${quotePosix(packChecksum ?? '<pack checksum shown after download>')} \\
+  --report ${quotePosix(`./replay-candidate-${short}.json`)}`;
 
   return (
     <div className="space-y-5">

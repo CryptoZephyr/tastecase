@@ -36,8 +36,20 @@ export const routes = {
 
 /** Only same-origin absolute paths are accepted as post-sign-in destinations. */
 export function safeNext(value: string | null | undefined, fallback = routes.projects): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\') || /[\u0000-\u001f]/.test(value)) return fallback;
-  return value;
+  if (!value || value.length > 4096 || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(value)) return fallback;
+  try {
+    const url = new URL(value, 'https://tastecase.invalid');
+    if (url.origin !== 'https://tastecase.invalid') return fallback;
+    // Do not let encoded separators become a protocol-relative destination on a later decode.
+    let path = url.pathname;
+    for (let count = 0; count < 4; count++) {
+      if (path.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(path)) return fallback;
+      const decoded = decodeURIComponent(path);
+      if (decoded === path) return value;
+      path = decoded;
+    }
+    return fallback;
+  } catch { return fallback; }
 }
 
 export function describeDestination(path: string): string {

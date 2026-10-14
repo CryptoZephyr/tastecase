@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ApiResult, UiError } from './result';
+import { isUncertain, type ApiResult, type UiError } from './result';
 
 export type Resource<T> =
-  | { status: 'loading'; data?: undefined; error?: undefined; updatedAt?: undefined; reloading: true }
-  | { status: 'ready'; data: T; error?: UiError; updatedAt: Date; reloading: boolean }
-  | { status: 'error'; data?: undefined; error: UiError; updatedAt?: undefined; reloading: boolean };
+  | { status: 'loading'; data?: undefined; error?: undefined; updatedAt?: undefined; reloading: boolean; stale: false }
+  | { status: 'ready'; data: T; error?: UiError; updatedAt: Date; reloading: boolean; stale: boolean }
+  | { status: 'error'; data?: undefined; error: UiError; updatedAt?: undefined; reloading: boolean; stale: false };
 
 interface Options<T> {
   /** Poll while this returns true for the last confirmed data. Paused while the tab is hidden. */
@@ -15,42 +15,50 @@ interface Options<T> {
   enabled?: boolean;
 }
 
-/**
- * Loads one API resource. A failed refresh keeps the last confirmed data and exposes the
- * error separately, so a network blip never replaces saved work with an empty or zero state.
+const sameIdentity = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
+const accessLost = (error: UiError) => ['unauthorized', 'forbidden', 'not_found'].includes(error.kind) || [401, 403, 404].includes(error.status ?? 0);
+
+/** A network refresh may keep marked-stale saved work. Access failures and identity
+ * changes discard it, including in the render before effects run. Callers must include
+ * their API/session and owner/project/resource identity in deps.
  */
 export function useResource<T>(load: () => Promise<ApiResult<T>>, deps: readonly unknown[], options: Options<T> = {}) {
   const { pollWhile, pollMs = 5000, enabled = true } = options;
-  const [state, setState] = useState<Resource<T>>({ status: 'loading', reloading: true });
-  const loadRef = useRef(load);
-  loadRef.current = load;
+  const identity = [enabled, ...deps];
+  const initial: Resource<T> = { status: 'loading', reloading: enabled, stale: false };
+  const [stored, setStored] = useState<{ identity: readonly unknown[]; value: Resource<T> }>({ identity, value: initial });
+  const current = useRef({ load, identity, enabled });
+  current.current = { load, identity, enabled };
   const generation = useRef(0);
 
   const run = useCallback(async () => {
+    const context = current.current;
+    if (!context.enabled) return;
     const id = ++generation.current;
-    setState(previous => (previous.status === 'loading' ? previous : { ...previous, reloading: true }) as Resource<T>);
-    const result = await loadRef.current();
-    if (id !== generation.current) return;
-    setState(previous => {
-      if (result.ok) return { status: 'ready', data: result.data, updatedAt: new Date(), reloading: false };
-      if (previous.status === 'ready') return { ...previous, error: result.error, reloading: false };
-      return { status: 'error', error: result.error, reloading: false };
+    setStored(previous => ({ identity: context.identity, value: sameIdentity(previous.identity, context.identity)
+      ? { ...previous.value, reloading: true, stale: previous.value.status === 'ready' } as Resource<T>
+      : { status: 'loading', reloading: true, stale: false } }));
+    const result = await context.load();
+    if (id !== generation.current || !sameIdentity(context.identity, current.current.identity)) return;
+    setStored(previous => {
+      if (result.ok) return { identity: context.identity, value: { status: 'ready', data: result.data, updatedAt: new Date(), reloading: false, stale: false } };
+      if (!accessLost(result.error) && isUncertain(result.error) && previous.value.status === 'ready') {
+        return { identity: context.identity, value: { ...previous.value, error: result.error, reloading: false, stale: true } };
+      }
+      return { identity: context.identity, value: { status: 'error', error: result.error, reloading: false, stale: false } };
     });
   }, []);
 
-  // Invalidates in-flight responses so a stale request can never overwrite newer state.
   const invalidate = useCallback(() => { generation.current += 1; }, []);
-
   useEffect(() => {
-    if (!enabled) return;
-    setState({ status: 'loading', reloading: true });
-    void run();
+    setStored({ identity: current.current.identity, value: { status: 'loading', reloading: enabled, stale: false } });
+    if (enabled) void run();
     return invalidate;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass the identity inputs explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass identity inputs explicitly.
   }, [enabled, run, invalidate, ...deps]);
 
-  const data = state.status === 'ready' ? state.data : undefined;
-  const shouldPoll = data !== undefined && pollWhile ? pollWhile(data) : false;
+  const state = sameIdentity(stored.identity, identity) ? stored.value : initial;
+  const shouldPoll = enabled && state.status === 'ready' && !state.error && Boolean(pollWhile?.(state.data));
   useEffect(() => {
     if (!shouldPoll) return;
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void run(); }, pollMs);
@@ -63,7 +71,8 @@ export function useResource<T>(load: () => Promise<ApiResult<T>>, deps: readonly
 /** Parallel resources resolved together for derived views such as the project next step. */
 export async function all<T extends readonly unknown[]>(calls: { [K in keyof T]: Promise<ApiResult<T[K]>> }): Promise<ApiResult<T>> {
   const results = await Promise.all(calls);
-  const failure = results.find(result => !result.ok);
+  // An earlier network error must not mask a concurrent loss of private access.
+  const failure = results.find(result => !result.ok && accessLost(result.error)) ?? results.find(result => !result.ok);
   if (failure && !failure.ok) return failure;
   return { ok: true, data: results.map(result => (result as { ok: true; data: unknown }).data) as unknown as T };
 }

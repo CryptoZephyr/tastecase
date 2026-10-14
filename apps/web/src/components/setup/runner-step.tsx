@@ -14,7 +14,7 @@ import { Section } from '@/components/ui/page';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { useApi } from '@/lib/api/context';
-import type { UiError } from '@/lib/api/result';
+import { isUncertain, type UiError } from '@/lib/api/result';
 import type { RunnerCredential } from '@/lib/api/types';
 import { useResource } from '@/lib/api/use-resource';
 
@@ -50,11 +50,12 @@ function CredentialRow({ projectId, credential, onRevoked }: { projectId: string
       <div className="min-w-0">
         <p className="font-medium break-words">{credential.label}</p>
         <p className="text-meta text-ink-2">Issued <Time iso={credential.createdAt} />{credential.revokedAt ? <> · revoked <Time iso={credential.revokedAt} /></> : null}</p>
+        {!credential.revokedAt ? <p className="text-meta text-ink-2">{credential.lastHandshakeAt ? <>Handshake verified <Time iso={credential.lastHandshakeAt} />. Current connection: offline or unknown.</> : 'Credential issued; no verified handshake recorded. Current connection: unknown.'}</p> : null}
         {error ? <ErrorState className="mt-2" error={error} what="this credential" /> : null}
       </div>
       {credential.revokedAt ? <Badge tone="unavailable">Revoked</Badge> : (
         <div className="flex items-center gap-2">
-          <Badge>Active</Badge>
+          <Badge tone={credential.lastHandshakeAt ? 'passed' : 'info'}>{credential.lastHandshakeAt ? 'Handshake verified' : 'Issued — unverified'}</Badge>
           <ConfirmDialog title={`Revoke “${credential.label}”?`} confirmLabel="Revoke credential" isPending={pending}
             trigger={<Button variant="destructive">Revoke</Button>}
             onConfirm={async close => {
@@ -109,14 +110,16 @@ export function RunnerStep({ projectId }: { projectId: string }) {
           <Button type="submit" isPending={pending} pendingLabel="Issuing" isDisabled={!label.trim() || Boolean(token)}>Issue runner credential</Button>
         </Form>
         {error ? <ErrorState error={error} what="a new runner credential" /> : null}
+        {error && isUncertain(error) ? <Notice tone="advisory" title="Credential issuance is unconfirmed"><p>Check the saved credential list before issuing another. If a credential was created but its one-time token was lost, revoke it and issue a replacement.</p><Button variant="secondary" onPress={() => void credentials.reload()}>Check saved credentials</Button></Notice> : null}
         <div className="space-y-3">
           <p className="text-control font-medium">On the runner machine</p>
           <p className="text-control text-ink-2">The runner ships in the TasteCase repository. Set these variables in its environment — never pass keys or tokens as command arguments:</p>
           <CodeBlock label="Runner environment" code={RUNNER_ENV} />
           <CodeBlock label="Build, check the handshake, run one attempt" code={RUNNER_COMMANDS} />
-          <Notice tone="info" title="TasteCase doesn’t record handshakes yet">
-            <p>A successful handshake prints <code>{'{"status":"ready", …}'}</code> on the runner machine and makes no assistant call. This page can’t confirm it for you; the first uploaded result is the proof the connection works. For a local API over plain HTTP, add <code>--allow-loopback-http</code>.</p>
+          <Notice tone="info" title="Verify the handshake, then check this page">
+            <p>A successful handshake returns <code>verifiedAt</code> on the runner machine and records the verification time here. It makes no assistant call. A past handshake proves authentication then, not that the runner is online now. For a local API over plain HTTP, add <code>--allow-loopback-http</code>.</p>
           </Notice>
+          <Button variant="secondary" onPress={() => void credentials.reload()} isPending={credentials.reloading}>Check handshake status</Button>
         </div>
       </div>
     </Section>

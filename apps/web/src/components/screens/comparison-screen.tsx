@@ -20,6 +20,7 @@ import type { ComparisonDetail, FinalizeComparisonRequest } from '@/lib/api/type
 import { useResource } from '@/lib/api/use-resource';
 import { newId, SCHEMA_VERSION } from '@/lib/ids';
 import { outcomeCounts, reportRows } from '@/lib/view/comparison-view';
+import { quotePosix } from '@/lib/view/shell-quote';
 import { LIMITATION_TEXT, STOP_REASON } from '@/lib/view/expectation-text';
 import { COMPARISON_STATE } from './comparisons-screen';
 
@@ -115,8 +116,8 @@ export function ComparisonScreen({ projectId, comparisonId }: { projectId: strin
       {state.active ? (
         <Section title="Run both releases on your runner" description="Bind the exact release label before each batch. A runner with no label or the wrong label can’t claim these runs.">
           <div className="grid gap-4 xl:grid-cols-2">
-            <CodeBlock label="Baseline runs" code={`export TASTECASE_ASSISTANT_VERSION="${plan.request.baselineVersion}"\nnode packages/runner/dist/cli.js run-once`} />
-            <CodeBlock label="Candidate runs" code={`export TASTECASE_ASSISTANT_VERSION="${plan.request.candidateVersion}"\nnode packages/runner/dist/cli.js run-once`} />
+            <CodeBlock label="Baseline runs" code={`export TASTECASE_ASSISTANT_VERSION=${quotePosix(plan.request.baselineVersion)}\nnode packages/runner/dist/cli.js run-once`} />
+            <CodeBlock label="Candidate runs" code={`export TASTECASE_ASSISTANT_VERSION=${quotePosix(plan.request.candidateVersion)}\nnode packages/runner/dist/cli.js run-once`} />
           </div>
           <p className="mt-2 text-control text-ink-2">Configure the matching assistant locally first — the label attests your configuration; it doesn’t switch models.</p>
         </Section>
@@ -146,7 +147,7 @@ export function ComparisonScreen({ projectId, comparisonId }: { projectId: strin
                 <span key={outcome} className="inline-flex items-center gap-1.5"><OutcomeBadge outcome={outcome as 'pass'} /><span className="text-control">× {count}</span></span>
               ))}
             </div>
-            <ReportTable projectId={projectId} plan={plan} rows={reportRows(plan, finalReport)} />
+            <ReportTable key={`${projectId}:${comparisonId}`} projectId={projectId} plan={plan} rows={reportRows(plan, finalReport)} />
             <ul className="mt-6 list-disc space-y-1 pl-5 text-control text-ink">{finalReport.limitations.map(limit => <li key={limit}>{LIMITATION_TEXT[limit]}</li>)}</ul>
           </Section>
           <Section title="Export and proof"><ExportPanel projectId={projectId} comparisonId={comparisonId} report={finalReport} /></Section>

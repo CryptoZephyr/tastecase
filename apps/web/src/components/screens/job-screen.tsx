@@ -16,11 +16,12 @@ import { useApi } from '@/lib/api/context';
 import type { UiError } from '@/lib/api/result';
 import { useResource } from '@/lib/api/use-resource';
 import { DISCOVERY_STATES } from '@/lib/view/discovery-view';
+import { loadOwnerHistory } from '@/lib/view/owner-history';
 
 export function JobScreen({ projectId, jobId }: { projectId: string; jobId: string }) {
   const api = useApi();
   const detail = useResource(() => api.discovery.get(projectId, jobId), [api, projectId, jobId], { pollWhile: data => DISCOVERY_STATES[data.job.state].active });
-  const cases = useResource(() => api.cases.list(projectId, { limit: 20 }), [api, projectId]);
+  const cases = useResource(() => loadOwnerHistory(window => api.cases.list(projectId, window)), [api, projectId]);
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState<UiError | null>(null);
 
@@ -73,8 +74,8 @@ export function JobScreen({ projectId, jobId }: { projectId: string; jobId: stri
       ) : null}
 
       <Section title="Cases found" description="Completed cases open for review even while this job is still running.">
-        <CandidateList projectId={projectId} detail={detail.data} cases={cases.status === 'ready' ? cases.data : null} onCreated={() => void cases.reload()} />
-        {cases.status === 'error' ? <ErrorState className="mt-3" error={cases.error} what="review status for these cases" onRetry={cases.reload} retrying={cases.reloading} /> : null}
+        <CandidateList projectId={projectId} detail={detail.data} cases={cases.status === 'ready' && !cases.error ? cases.data : null} onCreated={() => void cases.reload()} />
+        {cases.error ? <ErrorState className="mt-3" error={cases.error} what="review status for these cases" onRetry={cases.reload} retrying={cases.reloading} /> : null}
       </Section>
 
       <Section title="Progress"><StageTracker detail={detail.data} /></Section>

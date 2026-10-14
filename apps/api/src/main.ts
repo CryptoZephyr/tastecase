@@ -2,6 +2,7 @@ import pg from 'pg';
 import { OfficialQlooAdapter, NovaMicroDecisionAdapter } from '@tastecase/worker';
 import { buildBackend } from './backend.js';
 import { databasePoolConfig } from './database-config.js';
+import { publicSampleConfig } from './public-sample.js';
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -13,7 +14,7 @@ async function main(): Promise<void> {
   if (!/^\d{1,5}$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535) throw new Error('PORT must be between 1 and 65535.');
   const pool = new pg.Pool({ ...await databasePoolConfig(databaseUrl), max: 10, connectionTimeoutMillis: 5000, query_timeout: 6000 });
   pool.on('error', () => { console.error('Database connection unavailable.'); });
-  const { app, startWorker } = buildBackend({ pool, auth: { supabaseUrl, supabaseAnonKey },
+  const { app, startWorker } = buildBackend({ pool, auth: { supabaseUrl, supabaseAnonKey }, publicSample: publicSampleConfig(process.env),
     adapters: { qloo: () => new OfficialQlooAdapter(), decision: new NovaMicroDecisionAdapter(modelKey) },
   });
   let closing: Promise<void> | undefined;

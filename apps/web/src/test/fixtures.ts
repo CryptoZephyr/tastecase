@@ -38,7 +38,7 @@ export const task: TaskVersion = {
   syntheticBrief: { provenance: 'synthetic', label: 'Fixture brief', text: 'Fixture: recommend dinner for two tonight.' }, syntheticInterests: [], constraints,
 };
 const targetInput = { schema_version: '1.0.0' as const, projectId: ids.project, catalog, task, mappings, eligibleCatalogEntryIds: eligible };
-export const credentials: RunnerCredential[] = [{ schema_version: '1.0.0', id: ids.credential, projectId: ids.project, label: 'Fixture laptop runner', createdAt: at(4), revokedAt: null }];
+export const credentials: RunnerCredential[] = [{ schema_version: '1.0.0', id: ids.credential, projectId: ids.project, label: 'Fixture laptop runner', createdAt: at(4), revokedAt: null, lastHandshakeAt: at(5) }];
 
 const request = {
   schema_version: '1.0.0' as const, id: ids.job, catalogVersionId: ids.catalog, taskVersionId: ids.task, mappingConfirmationIds: mappings.map(row => row.id),

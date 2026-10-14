@@ -20,7 +20,7 @@ export default function HomePage() {
         <section className="mx-auto grid w-full max-w-[1200px] gap-10 px-4 pb-16 pt-10 sm:px-6 md:pt-16 lg:grid-cols-[11fr_9fr] lg:items-start lg:gap-12 lg:pb-24">
           <div className="lg:pt-10">
             <p className="text-body text-ink-2">For teams building AI travel concierges.</p>
-            <h1 className="mt-3 max-w-[16ch] font-serif text-hero font-normal tracking-[-0.01em] md:text-hero-lg">Find recommendation cases worth testing.</h1>
+            <h1 className="mt-3 max-w-[16ch] text-hero font-medium tracking-[-0.01em] md:text-hero-lg">Find recommendation cases worth testing.</h1>
             <p className="mt-5 max-w-[56ch] text-body text-ink">
               Use Qloo’s cultural signals to investigate your assistant’s dining recommendations, review the findings, and save tests for your next release.
             </p>
