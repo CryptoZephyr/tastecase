@@ -90,7 +90,8 @@ export async function replayComparisonRole(options: ReplayRoleOptions): Promise<
       assertSafePortableContent(projectComparisonResult(result), secrets);
       result = TargetResultSchema.parse(redactJson(result, secrets));
     } catch (error) {
-      if (options.signal?.aborted || Date.now() >= deadlineAt) {
+      if (options.signal?.aborted || Date.now() >= deadlineAt
+        || (error instanceof RunnerError && error.code === 'timeout' && remaining <= timeout)) {
         association.uncertainDispatches = 1;
         deadlineExceeded = !options.signal?.aborted;
         break;

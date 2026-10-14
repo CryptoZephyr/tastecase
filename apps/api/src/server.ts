@@ -13,6 +13,7 @@ import { HttpError, parseRequest, safeError } from './errors.js';
 import { registerDiscoveryRoutes } from './discovery-routes.js';
 import { registerReviewRoutes } from './review-routes.js';
 import { registerComparisonRoutes } from './comparison-routes.js';
+import { readPublicSample, sampleUnavailable, validatePublicSampleConfig, type PublicSampleConfig } from './public-sample.js';
 import {
   transaction, CREDENTIAL_COLUMNS, projectRecord, catalogRecord, taskRecord, mappingRecord, credentialRecord,
   attemptRecord, type ProjectRow, type VersionRow, type MappingRow, type CredentialRow, type AttemptRow,
@@ -24,6 +25,7 @@ export interface ServerOptions {
   leaseDurationSeconds?: number;
   handlerTimeoutMs?: number;
   workerReady?: () => boolean;
+  publicSample?: PublicSampleConfig;
 }
 
 const deadlineSignals = new WeakMap<FastifyRequest, AbortSignal>();
@@ -37,6 +39,7 @@ export function requestSignal(request: FastifyRequest): AbortSignal {
 export function buildServer(options: ServerOptions) {
   if ('testVerifier' in options.auth && process.env.NODE_ENV === 'production') throw new Error('Test authentication is forbidden in production.');
   const verifyOwner = 'testVerifier' in options.auth ? options.auth.testVerifier : createSupabaseOwnerVerifier(options.auth);
+  const sampleConfig = options.publicSample === undefined ? undefined : validatePublicSampleConfig(options.publicSample);
   const leaseSeconds = options.leaseDurationSeconds ?? 300;
   const handlerTimeoutMs = options.handlerTimeoutMs ?? 15000;
   if (!Number.isInteger(handlerTimeoutMs) || handlerTimeoutMs < 10 || handlerTimeoutMs > 30000) throw new Error('Handler deadline must be between 10 and 30000 milliseconds.');
@@ -78,6 +81,16 @@ export function buildServer(options: ServerOptions) {
   });
   app.addHook('onSend', async (_request, reply) => { reply.header('cache-control', 'no-store'); });
   app.get('/health', async () => ({ status: 'ok' }));
+  app.get('/public/sample', async request => {
+    if (Object.keys(request.query as object).length) throw new HttpError(400, 'invalid_request', 'The public sample does not accept selectors.');
+    if (!sampleConfig) sampleUnavailable();
+    try {
+      return await transaction(options.pool, async client => {
+        await client.query('SET TRANSACTION READ ONLY');
+        return readPublicSample(client, sampleConfig);
+      }, requestSignal(request), true);
+    } catch { sampleUnavailable(); }
+  });
   app.get('/ready', async (request, reply) => {
     try {
       if (options.workerReady && !options.workerReady()) throw new Error('Discovery worker unavailable.');
@@ -87,6 +100,7 @@ export function buildServer(options: ServerOptions) {
         await client.query(`SELECT id FROM public.projects LIMIT 0;
           SELECT id FROM public.catalog_versions LIMIT 0; SELECT id FROM public.task_versions LIMIT 0;
           SELECT id FROM public.mapping_confirmations LIMIT 0; SELECT id FROM public.runner_credentials LIMIT 0;
+          SELECT credential_id,first_verified_at,last_verified_at FROM public.runner_handshakes LIMIT 0;
           SELECT id FROM public.target_attempts LIMIT 0; SELECT attempt_id FROM public.target_attempt_mappings LIMIT 0;
           SELECT id FROM public.discovery_jobs LIMIT 0; SELECT job_id FROM public.discovery_job_state LIMIT 0;
           SELECT id FROM public.discovery_provider_attempts LIMIT 0; SELECT id FROM public.discovery_tool_evidence LIMIT 0;
@@ -279,10 +293,14 @@ export function buildServer(options: ServerOptions) {
       throw error;
     });
   }
-  app.post('/runner/handshake', async request => runner(request, async (_client, credential) => {
+  app.post('/runner/handshake', async request => runner(request, async (client, credential) => {
     parseRequest(RunnerHandshakeRequestSchema, request.body);
-    return RunnerHandshakeResponseSchema.parse({ schema_version: SCHEMA_VERSION, credentialId: credential.id, projectId: credential.project_id, leaseDurationSeconds: leaseSeconds });
-  }));
+    const receipt = await client.query<{ last_verified_at: Date }>(`INSERT INTO public.runner_handshakes(credential_id,project_id)
+      VALUES ($1,$2) ON CONFLICT (credential_id) DO UPDATE SET last_verified_at=clock_timestamp()
+      RETURNING last_verified_at`, [credential.id, credential.project_id]);
+    return RunnerHandshakeResponseSchema.parse({ schema_version: SCHEMA_VERSION, credentialId: credential.id, projectId: credential.project_id,
+      leaseDurationSeconds: leaseSeconds, verifiedAt: receipt.rows[0].last_verified_at.toISOString() });
+  }, true));
   app.post('/runner/claims', async (request, reply) => runner(request, async (client, credential) => {
     const body = parseRequest(ClaimAttemptRequestSchema, request.body);
     const found = await client.query<AttemptRow>("SELECT * FROM public.target_attempts WHERE project_id=$1 AND (status='queued' OR (status='leased' AND lease_expires_at<=clock_timestamp())) AND public.discovery_target_claimable(id) AND public.comparison_target_claimable(id,$2) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1", [credential.project_id, body.assistantVersion ?? null]);

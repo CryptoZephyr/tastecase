@@ -10,7 +10,7 @@ import {
   ReviewCaseResponseSchema, ReviewDecisionResponseSchema, SuiteIdentitySchema, PublishSuiteResponseSchema,
   ComparisonCreateResponseSchema, ComparisonDetailResponseSchema, ComparisonListResponseSchema,
   ComparisonFinalizeResponseSchema, validatePortableTestPack, validateComparisonReportAgainstPlan,
-  prepareComparisonPlan, ApiErrorSchema,
+  prepareComparisonPlan, projectComparisonCase, ApiErrorSchema,
   type ApprovedExpectation, type CreateComparisonRequest, type ComparisonPlan, type TargetAdapter, type TargetResult,
   type MappingConfirmation, type ClaimAttemptResponse,
 } from '@tastecase/contracts';
@@ -440,6 +440,40 @@ test('Gate 4 actual owner API, loopback two-version runner and offline replay', 
       assert.equal((await pool.query('SELECT count(*) FROM public.comparison_reports WHERE comparison_id=$1', [req.id])).rows[0].count, '1');
       assert.deepEqual(await pack(req.id), await pack(req.id));
     });
+    await t.test('existing discovery task microseconds match published milliseconds without accepting changed content or times', async () => {
+      for (const variant of ['precision', 'content', 'timestamp']) {
+        const fresh = await fixture(null, 1);
+        const published = fresh.publication.suite;
+        const row = published.cases[0]; assert.ok(row);
+        const projection = projectComparisonCase(row);
+        for (const input of Object.values(projection.inputs)) {
+          const { projectId, createdAt, checksum: _checksum, ...content } = input.task;
+          void _checksum;
+          if (variant === 'content') content.syntheticBrief = { ...content.syntheticBrief, text: 'Changed pinned task meaning.' };
+          await pool.query(`INSERT INTO public.task_versions(id,project_id,catalog_version_id,content,checksum,created_at)
+            VALUES($1,$2,$3,$4,$5,date_trunc('milliseconds',$6::timestamptz)+$7::interval)`,
+          [content.id, projectId, content.catalogVersionId, JSON.stringify(content), checksum(content), createdAt,
+            variant === 'timestamp' ? '1401 microseconds' : '401 microseconds']);
+        }
+        const requestBody = fresh.body({ dispatchBudget: 4, reclaimBudget: 0 });
+        if (variant === 'precision') {
+          const created = await create(requestBody);
+          assert.equal(created.comparison.plan.slots.length, 4);
+          assert.equal((await pack(requestBody.id)).plan.cases[0]?.inputs.a.task.createdAt, projection.inputs.a.task.createdAt);
+          assert.equal((await create(requestBody)).idempotent, true);
+          for (const input of Object.values(projection.inputs)) {
+            const unchanged = await pool.query("SELECT created_at=date_trunc('milliseconds',$2::timestamptz)+interval '401 microseconds' AS matches FROM public.task_versions WHERE id=$1", [input.task.id, input.task.createdAt]);
+            assert.equal(unchanged.rows[0].matches, true);
+          }
+          const stored = await pool.query('SELECT snapshot FROM public.suite_versions WHERE id=$1', [published.id]);
+          assert.equal(canonicalJson(stored.rows[0].snapshot), canonicalJson(published));
+        } else {
+          await request('POST', comparisons, requestBody, 409);
+          assert.equal((await pool.query('SELECT count(*) FROM public.comparison_runs WHERE id=$1', [requestBody.id])).rows[0].count, '0');
+        }
+      }
+    });
+
     await t.test('unbound legacy foundation work remains claimable and no comparison slot is stolen', async () => {
       const id = randomUUID();
       await request('POST', `${base}/attempts`, { ...v, id, catalogVersionId: f.catalog.id, taskVersionId: f.task.id,

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { computeDiscoveryFacts, RankingEvidenceSchema } from '@tastecase/contracts';
 import { childEnvironment, normalizeRank, normalizeResolution, parseEnvelope, validateTools, OfficialQlooAdapter, QLOO_HOST } from './qloo.js';
-import { parseSelection, NovaMicroDecisionAdapter, boundedJson } from './decision.js';
+import { parseSelection, OpenRouterDecisionAdapter, boundedJson } from './decision.js';
 import { UnknownDispatch, type RankRequest } from './types.js';
 import { startDiscoveryWorker } from './main.js';
 
@@ -23,10 +23,10 @@ const tools = () => ({tools:['qloo_rank','qloo_describe'].map(name=>({name,
 }))});
 
 test('standalone worker rejects hosted TLS overrides before opening any database or provider',async()=>{
-  const names=['DATABASE_URL','LiteLLM_API_KEY','QLOO_API_KEY'] as const;
+  const names=['DATABASE_URL','OPENROUTER_API_KEY','QLOO_API_KEY'] as const;
   const prior=names.map(name=>process.env[name]);
   try {
-    process.env.LiteLLM_API_KEY='synthetic';process.env.QLOO_API_KEY='synthetic';
+    process.env.OPENROUTER_API_KEY='synthetic';process.env.QLOO_API_KEY='synthetic';
     for (const name of ['sslmode','sslrootcert','sslcert','sslkey']) {
       process.env.DATABASE_URL=`postgresql://synthetic@db.invalid/synthetic?${name}=synthetic`;
       await assert.rejects(startDiscoveryWorker(new AbortController().signal),/URL overrides/);
@@ -120,26 +120,53 @@ test('MCP child environment neutralises SDK inheritance and contains no DB/model
 
 const rank=RankingEvidenceSchema.parse({kind:'rank',providerStatus:'ok',profileId:'a',scope:'full',requestedEntryIds:['one','two'],orderedEntryIds:['one','two'],missingEntryIds:[],unmappedEntryIds:[],mappingConfirmationIds:[],anchorConfirmationIds:[]});
 const facts=computeDiscoveryFacts(randomUUID(),[randomUUID(),randomUUID()],rank,{...rank,profileId:'b',orderedEntryIds:['two','one']});
-test('Nova selection IDs are checked against software facts; model claims and prose are rejected',()=>{
+test('Nemotron selection IDs are checked against software facts; model claims and prose are rejected',()=>{
   const id=facts.contrasts[0]?.id; assert.ok(id);
   assert.equal(parseSelection({selectedContrastId:id},facts).selectedContrastId,id);
   for (const value of [{selectedContrastId:randomUUID()},{selectedContrastId:id,classification:'failure'},{selectedContrastId:id,rationale:'Invented'},'one is disliked']) assert.throws(()=>parseSelection(value,facts));
 });
 
-test('Nova Micro uses only computed facts, strict ID-only schema and pinned gateway',async()=>{
+test('Nemotron uses only computed facts, strict ID-only schema and free-only OpenRouter routing',async()=>{
   let url=''; let redirect: RequestRedirect | undefined; let body: Record<string,unknown>={}; const id=facts.contrasts[0]?.id;
   const mock: typeof fetch=async(input,init)=>{url=String(input);redirect=init?.redirect;body=JSON.parse(String(init?.body)) as Record<string,unknown>;return Response.json({choices:[{message:{content:JSON.stringify({selectedContrastId:id})}}]});};
-  const adapter=new NovaMicroDecisionAdapter('synthetic-noncredential',mock);
+  const adapter=new OpenRouterDecisionAdapter('synthetic-noncredential',mock);
+  assert.equal(JSON.stringify(adapter).includes('synthetic-noncredential'),false);
   assert.equal((await adapter.select(facts,{signal:new AbortController().signal,outputBytes:64000})).selectedContrastId,id);
-  assert.equal(url,'https://litellm.vision.aivar.app/v1/chat/completions'); assert.equal(body.model,'nova-micro'); assert.equal(body.tools,undefined);assert.equal(redirect,'error');
+  assert.equal(url,'https://openrouter.ai/api/v1/chat/completions'); assert.equal(body.model,'nvidia/nemotron-3-super-120b-a12b:free'); assert.equal(body.tools,undefined);assert.equal(redirect,'error');
+  assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
+  assert.deepEqual(body.reasoning,{enabled:false,exclude:true});
   assert.deepEqual(body.response_format,{type:'json_object'});assert.equal(body.max_tokens,512);
 });
 
-test('Nova auth does not retry; transport errors remain unknown; streaming size is bounded',async()=>{
+test('OpenRouter auth does not retry; transport errors remain unknown; streaming size is bounded',async()=>{
   let calls=0;
-  const auth=new NovaMicroDecisionAdapter('synthetic-noncredential',async()=>{calls++;return new Response(null,{status:401});});
+  const auth=new OpenRouterDecisionAdapter('synthetic-noncredential',async()=>{calls++;return new Response(null,{status:401});});
   await assert.rejects(auth.select(facts,{signal:new AbortController().signal,outputBytes:64000}),/MODEL_AUTH/); assert.equal(calls,1);
-  const network=new NovaMicroDecisionAdapter('synthetic-noncredential',async()=>{throw new TypeError('Network error with private text');});
+  const network=new OpenRouterDecisionAdapter('synthetic-noncredential',async()=>{throw new TypeError('Network error with private text');});
   await assert.rejects(network.select(facts,{signal:new AbortController().signal,outputBytes:64000}),UnknownDispatch);
   await assert.rejects(boundedJson(new Response('x'.repeat(100)),10),/budget/);
+});
+
+test('OpenRouter decision failures never fall back, retry or retain provider errors',async()=>{
+  for (const status of [402,429,500,503]) {
+    let calls=0;
+    const adapter=new OpenRouterDecisionAdapter('synthetic-private-key',async()=>{calls++;return new Response('synthetic-private-key upstream private error',{status});});
+    await assert.rejects(adapter.select(facts,{signal:new AbortController().signal,outputBytes:64000}),/^TypeError: MODEL_UNAVAILABLE$/);
+    assert.equal(calls,1);
+  }
+  assert.throws(()=>new OpenRouterDecisionAdapter(''));
+  assert.throws(()=>new OpenRouterDecisionAdapter('invalid\nkey'));
+});
+
+test('OpenRouter decisions support null and reject malformed, unsupported and credential-bearing JSON',async()=>{
+  const key='synthetic-private-key';
+  const make=(content:string)=>new OpenRouterDecisionAdapter(key,async()=>Response.json({choices:[{message:{content}}]}));
+  const context={signal:new AbortController().signal,outputBytes:64000};
+  assert.equal((await make('{"selectedContrastId":null}').select(facts,context)).selectedContrastId,null);
+  for (const content of ['not JSON',JSON.stringify({selectedContrastId:randomUUID()}),JSON.stringify({selectedContrastId:null,rationale:key})]) {
+    await assert.rejects(make(content).select(facts,context),/^TypeError: Invalid model selection$/);
+  }
+  const controller=new AbortController();controller.abort();let calls=0;
+  const adapter=new OpenRouterDecisionAdapter(key,async()=>{calls++;return Response.json({});});
+  await assert.rejects(adapter.select(facts,{signal:controller.signal,outputBytes:64000}));assert.equal(calls,0);
 });

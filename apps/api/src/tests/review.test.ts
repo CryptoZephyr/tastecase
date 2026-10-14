@@ -9,7 +9,7 @@ import {
   ReviewCaseResponseSchema, ReviewCaseListResponseSchema, ReviewDecisionResponseSchema,
   ReviewHistoryResponseSchema, SuiteIdentitySchema, SuiteListResponseSchema, SuiteVersionSchema,
   SuiteVersionListResponseSchema, PublishSuiteResponseSchema, ApiErrorSchema,
-  type ReviewDecisionRequest, type ReviewDecisionResponse, type PublishSuiteRequest, type MappingConfirmation,
+  PublicSampleSchema, type ReviewDecisionRequest, type ReviewDecisionResponse, type PublishSuiteRequest, type MappingConfirmation,
 } from '@tastecase/contracts';
 import { buildServer } from '../server.js';
 import { transaction } from '../db.js';
@@ -59,7 +59,7 @@ test('real PostgreSQL Gate 3 owner API: review, immutable suites and recovery', 
     const runner = MintRunnerCredentialResponseSchema.parse((await request('POST', `${base}/runner-credentials`, { ...v, label: 'Synthetic Gate 3 runner' }, 201)).json());
     credentialIds.push(runner.credential.id);
 
-    async function fixture(projectId = project.id, token = 'synthetic-a') {
+    async function fixture(projectId = project.id, token = 'synthetic-a', recorded = false) {
       const prefix = `/projects/${projectId}`;
       const catalog = CatalogVersionSchema.parse((await request('POST', `${prefix}/catalogs`, { ...v, id: randomUUID(), label: 'Synthetic review catalog',
         entries: ['one', 'two', 'missing', 'unmapped', 'excluded'].map(id => ({ id, name: `Synthetic ${id}` })) }, 201, token)).json());
@@ -84,8 +84,16 @@ test('real PostgreSQL Gate 3 owner API: review, immutable suites and recovery', 
       const [a, b] = ranks; assert.ok(a && b);
       const facts = computeDiscoveryFacts(job.id, rankIds, a, b); const factId = randomUUID();
       const createdAt = new Date().toISOString();
-      for (const [index, data] of [...ranks, facts].entries()) await pool.query('INSERT INTO public.discovery_tool_evidence(id,project_id,job_id,data,checksum,captured_at) VALUES($1,$2,$3,$4,$5,$6)',
-        [rankIds[index] ?? factId, projectId, job.id, JSON.stringify(data), checksum(data), createdAt]);
+      for (const [index, source] of [...ranks, facts].entries()) {
+        // Test-only simulated persisted execution receipts, never configured as a product sample.
+        const attemptId = recorded && index < 2 ? randomUUID() : null;
+        if (attemptId) await pool.query(`INSERT INTO public.discovery_provider_attempts(id,project_id,job_id,kind,operation_key,try_number,request_checksum,reserved_lease_id,status,dispatched_at,finished_at,error_code)
+          VALUES($1,$2,$3,'qloo',$4,0,$5,$6,'accepted',$7,$7,'private-provider-debug')`,
+        [attemptId, projectId, job.id, `Synthetic rank ${index}`, checksum(source), randomUUID(), createdAt]);
+        const data = recorded && source.kind === 'rank' ? { ...source, error: { code: 'private-provider-debug', category: 'unavailable', retryable: false } } : source;
+        await pool.query('INSERT INTO public.discovery_tool_evidence(id,project_id,job_id,data,checksum,captured_at,attempt_id) VALUES($1,$2,$3,$4,$5,$6,$7)',
+          [rankIds[index] ?? factId, projectId, job.id, JSON.stringify(data), checksum(data), createdAt, attemptId]);
+      }
       const briefs = { a: { ...task.syntheticBrief, text: 'Synthetic profile a.' }, b: { ...task.syntheticBrief, text: 'Synthetic profile b.' }, constraints: task.constraints, eligibleCatalogEntryIds: jobRequest.eligibleCatalogEntryIds };
       const targets: { id: string; leaseId: string }[] = [];
       for (const profileId of ['a', 'b'] as const) {
@@ -187,6 +195,36 @@ test('real PostgreSQL Gate 3 owner API: review, immutable suites and recovery', 
       await request('POST', reviews, ' '.repeat(65537), 413);
       assert.equal((await caseRead()).head.revision, 0);
     });
+    await t.test('public sample is allowlisted, read-only, recorded, sanitized and separate from owner routes', async () => {
+      const simulated = await fixture(project.id, 'synthetic-a', true);
+      const receipt = ReviewDecisionResponseSchema.parse((await request('POST', `${cases}/${simulated.caseRequest.id}/reviews`, decision(), 201)).json());
+      const sampleApp = buildServer({ pool, auth, publicSample: { projectId: project.id, caseId: simulated.caseRequest.id, syntheticInputs: true } });
+      const missingApp = buildServer({ pool, auth, publicSample: { projectId: other.id, caseId: simulated.caseRequest.id, syntheticInputs: true } });
+      const unrecordedApp = buildServer({ pool, auth, publicSample: { projectId: project.id, caseId: unreviewed.caseRequest.id, syntheticInputs: true } });
+      try {
+        const before = (await pool.query('SELECT row_to_json(s) AS state FROM public.discovery_job_state s WHERE job_id=$1', [simulated.job.id])).rows[0].state;
+        const response = await sampleApp.inject('/public/sample'); assert.equal(response.statusCode, 200);
+        const sample = PublicSampleSchema.parse(response.json());
+        assert.equal(sample.provenance, 'recorded'); assert.equal(sample.inputs, 'synthetic');
+        assert.equal(sample.capturedAt, receipt.review.decision.evidence.capturedAt);
+        assert.deepEqual(sample.job.evidence.map(row => row.capturedAt), receipt.review.decision.evidence.evidence.map(row => row.capturedAt));
+        assert.equal(sample.caseResponse.case.id, simulated.caseRequest.id);
+        assert.equal(sample.caseResponse.candidate.content.proposedExpectation.automaticFailure, false);
+        assert.equal(sample.caseResponse.currentReview?.decision.id, receipt.review.decision.id);
+        for (const forbidden of ['leaseCredentialId', 'leaseId', 'leaseExpiresAt', 'reservedLeaseId', 'token_hash', runner.token, 'private-provider-debug', owners.a, 'confirmedBy', 'reviewedBy']) assert.equal(response.body.includes(forbidden), false);
+        assert.equal(response.headers['cache-control'], 'no-store');
+        const repeat = await sampleApp.inject({ url: '/public/sample', headers: { authorization: 'Bearer synthetic-b' } });
+        assert.equal(repeat.statusCode, 200); assert.deepEqual(repeat.json(), response.json());
+        assert.deepEqual((await pool.query('SELECT row_to_json(s) AS state FROM public.discovery_job_state s WHERE job_id=$1', [simulated.job.id])).rows[0].state, before);
+        assert.equal((await sampleApp.inject(`/public/sample?caseId=${foreign.caseRequest.id}`)).statusCode, 400);
+        assert.equal((await sampleApp.inject({ method: 'POST', url: '/public/sample', payload: decision() })).statusCode, 404);
+        assert.equal((await sampleApp.inject(`${cases}/${simulated.caseRequest.id}`)).statusCode, 401);
+        assert.equal((await missingApp.inject('/public/sample')).statusCode, 503);
+        assert.equal((await unrecordedApp.inject('/public/sample')).statusCode, 503);
+        assert.equal((await app.inject('/public/sample')).statusCode, 503);
+      } finally { await sampleApp.close(); await missingApp.close(); await unrecordedApp.close(); }
+    });
+
     await t.test('accept preserves advisory proposal and pins actual partial/missing results without changing discovery', async () => {
       const before = (await pool.query('SELECT row_to_json(s) AS state FROM public.discovery_job_state s WHERE job_id=$1', [first.job.id])).rows[0].state;
       accepted = await review(acceptRequest); siblingAccepted = await review(decision(), sibling.caseRequest.id);

@@ -15,11 +15,19 @@
  * freezes its checksum and returns the original receipt on retry. Uploads never rewrite reports.
  * Comparison bounds: 10 cases, 120 logical slots, <=24 extra reclaim charges, <=144 dispatches,
  * one-hour deadline, 64 KiB request, 8 MiB plan/pack and 2 MiB report; 20-row compact lists.
+ * Runner credentials expose lastHandshakeAt (null before verification), never an online guarantee.
+ * Anonymous GET /public/sample is read-only and accepts no selectors; its dedicated synthetic
+ * project/case IDs and synthetic-input approval are server configuration only. It serves a
+ * persisted review snapshot as recorded evidence, with capturedAt; never dispatches providers.
+ * Public DTOs omit private credential/lease/reviewer/provider-error data. Original source
+ * checksums are provenance references, not checksums of these non-replayable projections.
+ * Unconfigured, unsafe or insufficiently recorded samples return 503 internal_error.
  * Unknown/cross-project records return 404.
  * Conflicting idempotent IDs/results return 409. Expired leases return 409 lease_expired.
  * Revoked credentials return 401 credential_revoked. Invalid bodies return 400 invalid_request.
  */
 export const REST_CONTRACTS = [
+  { method: 'GET', path: '/public/sample', auth: 'public', response: 'PublicSampleSchema', status: 200, unavailableStatus: 503 },
   { method: 'POST', path: '/projects', auth: 'owner', request: 'CreateProjectRequestSchema', response: 'ProjectSchema', status: 201 },
   { method: 'GET', path: '/projects', auth: 'owner', response: 'ProjectListResponseSchema', status: 200 },
   { method: 'GET', path: '/projects/:projectId', auth: 'owner', response: 'ProjectSchema', status: 200 },

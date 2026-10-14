@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.next/
 .env
 .env.*
 !.env.example
@@ -10,3 +11,4 @@ coverage/
 evidence/
 .qloo/
 *.tsbuildinfo
+apps/web/next-env.d.ts

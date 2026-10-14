@@ -7,7 +7,7 @@ import {
   MintRunnerCredentialResponseSchema, AttemptSchema,
 } from '@tastecase/contracts';
 import { buildServer, runMigrations } from '../apps/api/src/index.js';
-import { RunnerClient, createLiteLLMAdapter, runOnce } from '@tastecase/runner';
+import { RunnerClient, createConfiguredAdapter, OPENROUTER_MODEL, runOnce } from '@tastecase/runner';
 
 let stage = 'configuration';
 async function main() {
@@ -16,7 +16,7 @@ async function main() {
   if (!connectionString || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(connectionString).hostname)) {
     throw new Error('This synthetic-auth verification requires a local Postgres database.');
   }
-  if (!process.env.LITELLM_API_KEY) throw new Error('Local LITELLM_API_KEY is required.');
+  if (!process.env.OPENROUTER_API_KEY) throw new Error('Local OPENROUTER_API_KEY is required.');
   const pool = new pg.Pool({ connectionString });
   const ownerId = randomUUID();
   const ownerToken = `synthetic-owner-${randomUUID()}`;
@@ -62,12 +62,10 @@ async function main() {
     }));
     const env = {
       TASTECASE_API_ORIGIN: origin, TASTECASE_RUNNER_TOKEN: credential.token,
-      LITELLM_API_KEY: process.env.LITELLM_API_KEY,
-      LITELLM_BASE_URL: process.env.LITELLM_BASE_URL ?? 'https://litellm.vision.aivar.app/v1',
-      LITELLM_MODEL: process.env.LITELLM_MODEL ?? 'nova-micro',
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     };
     const client = new RunnerClient({ env, allowLoopbackHttp: true });
-    const adapter = createLiteLLMAdapter({ env });
+    const adapter = createConfiguredAdapter({ env });
     stage = 'runner_execution';
     const outcome = await runOnce(client, adapter);
     assert.equal(outcome.status, 'completed', 'The runner did not persist an attempt.');
@@ -86,7 +84,7 @@ async function main() {
       assert.equal(AttemptSchema.parse(response.json()).resultChecksum, saved.resultChecksum);
     } finally { await reopened.close(); }
     const proof = { synthetic: true, auth: 'Local synthetic verifier; hosted Supabase login not exercised',
-      model: env.LITELLM_MODEL, attemptId: attempt.id, projectId: project.id,
+      model: OPENROUTER_MODEL, attemptId: attempt.id, projectId: project.id,
       resultChecksum: saved.resultChecksum, outcome: outcome.result.outcome,
       traceCompleteness: outcome.result.trace.completeness, persistedAfterApiRestart: true };
     await mkdir('.local', { recursive: true, mode: 0o700 });

@@ -60,7 +60,7 @@ export TASTECASE_ASSISTANT_VERSION="concierge-prompt-v1"
 node packages/runner/dist/cli.js run-once
 ```
 
-Repeat for the declared slots, then use the locally configured candidate adapter with its exact label. Keys remain environment values; never CLI arguments or artifact fields. Setting the label alone does not change the LiteLLM model or prompt. Custom adapter code stays on the owner's machine.
+Repeat for the declared slots, then use the locally configured candidate adapter with its exact label. Keys remain environment values; never CLI arguments or artifact fields. Setting the label alone does not change the provider model or prompt. Custom adapter code stays on the owner's machine.
 
 Claims reserve charged leases atomically against persisted counters and state. Reclaiming an expired attempt uses a fresh lease and consumes allowance; stale uploads fail. Cancelled, finalized, deadline-expired or budget-exhausted comparisons cannot issue new claims. Already dispatched uploads may arrive under valid leases. Unknown/repeated dispatches remain charged: exactly-once execution or billing is not promised.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { type TargetAdapter } from '@tastecase/contracts';
 import { RunnerClient, type Environment } from './client.js';
-import { LITELLM_ADAPTER_METADATA, createLiteLLMAdapter } from './litellm.js';
+import { configuredAdapterMetadata, createConfiguredAdapter } from './litellm.js';
 import { runOnce } from './runtime.js';
 import { replayComparisonFile, type ReplayRole } from './replay.js';
 import { RunnerError, validateTimeout, type Fetch } from './safety.js';
@@ -15,9 +15,11 @@ Usage: tastecase-runner handshake [--allow-loopback-http] [--request-timeout-ms 
 Environment (never pass keys/tokens as CLI arguments):
   TASTECASE_API_ORIGIN    HTTPS API origin, no path/query/credentials
   TASTECASE_RUNNER_TOKEN  Project-scoped minted runner bearer credential
+  OPENROUTER_API_KEY     Local key; default free-only Nemotron 3 Super adapter
+  TASTECASE_MODEL_PROVIDER Optional: openrouter (default), or explicit litellm
   LITELLM_BASE_URL       Trusted local provider base URL (include /v1 if needed)
   TASTECASE_ASSISTANT_VERSION Explicit local release binding, required for comparisons/replay
-  LITELLM_API_KEY        Local provider credential; run-once/replay only
+  LITELLM_API_KEY        Legacy litellm provider credential; run-once/replay only
   LITELLM_MODEL          Optional model name, defaults to nova-micro
 
 Loopback HTTP requires --allow-loopback-http (API and provider).
@@ -90,7 +92,7 @@ export async function runCli(args: readonly string[], dependencies: CliDependenc
     if (command === 'replay') {
       const env = dependencies.env ?? process.env;
       if (!packPath || !role || !env.TASTECASE_ASSISTANT_VERSION) throw new RunnerError('configuration_error', 'Replay requires a local pack, explicit role and TASTECASE_ASSISTANT_VERSION.');
-      const adapter = dependencies.adapter ?? createLiteLLMAdapter({ env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs });
+      const adapter = dependencies.adapter ?? createConfiguredAdapter({ env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs });
       const report = await replayComparisonFile({ packPath, reportPath, role, assistantVersion: env.TASTECASE_ASSISTANT_VERSION,
         expectedChecksum, env, adapter, signal: dependencies.signal, targetTimeoutMs, replayTimeoutMs });
       write(JSON.stringify(report));
@@ -101,11 +103,11 @@ export async function runCli(args: readonly string[], dependencies: CliDependenc
     }
     const client = new RunnerClient({ env: dependencies.env, fetch: dependencies.fetch, allowLoopbackHttp, requestTimeoutMs });
     if (command === 'handshake') {
-      const response = await client.handshake(dependencies.adapter ?? LITELLM_ADAPTER_METADATA, dependencies.signal);
+      const response = await client.handshake(dependencies.adapter ?? configuredAdapterMetadata(dependencies.env), dependencies.signal);
       write(JSON.stringify({ status: 'ready', ...response }));
       return 0;
     }
-    const adapter = dependencies.adapter ?? createLiteLLMAdapter({ env: dependencies.env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs });
+    const adapter = dependencies.adapter ?? createConfiguredAdapter({ env: dependencies.env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs });
     const outcome = await runOnce(client, adapter, { signal: dependencies.signal, targetTimeoutMs, uploadReserveMs: requestTimeoutMs });
     if (outcome.status === 'completed') {
       write(JSON.stringify({ status: outcome.status, attemptId: outcome.attemptId, leaseId: outcome.leaseId, outcome: outcome.result.outcome, idempotent: outcome.acknowledgement.idempotent }));

@@ -1,20 +1,21 @@
 import pg from 'pg';
-import { OfficialQlooAdapter, NovaMicroDecisionAdapter } from '@tastecase/worker';
+import { OfficialQlooAdapter, OpenRouterDecisionAdapter } from '@tastecase/worker';
 import { buildBackend } from './backend.js';
 import { databasePoolConfig } from './database-config.js';
+import { publicSampleConfig } from './public-sample.js';
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-  const modelKey = process.env.LiteLLM_API_KEY;
+  const modelKey = process.env.OPENROUTER_API_KEY;
   if (!databaseUrl || !supabaseUrl || !supabaseAnonKey || !modelKey || !process.env.QLOO_API_KEY) throw new Error('Backend database, Auth and provider configuration are required.');
   const portText = process.env.PORT ?? '3000';
   if (!/^\d{1,5}$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535) throw new Error('PORT must be between 1 and 65535.');
   const pool = new pg.Pool({ ...await databasePoolConfig(databaseUrl), max: 10, connectionTimeoutMillis: 5000, query_timeout: 6000 });
   pool.on('error', () => { console.error('Database connection unavailable.'); });
-  const { app, startWorker } = buildBackend({ pool, auth: { supabaseUrl, supabaseAnonKey },
-    adapters: { qloo: () => new OfficialQlooAdapter(), decision: new NovaMicroDecisionAdapter(modelKey) },
+  const { app, startWorker } = buildBackend({ pool, auth: { supabaseUrl, supabaseAnonKey }, publicSample: publicSampleConfig(process.env),
+    adapters: { qloo: () => new OfficialQlooAdapter(), decision: new OpenRouterDecisionAdapter(modelKey) },
   });
   let closing: Promise<void> | undefined;
   const close = async () => {

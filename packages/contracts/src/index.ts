@@ -126,6 +126,9 @@ export type Adapter = TargetAdapter;
 export const RunnerCredentialSchema = z.strictObject({
   schema_version: SchemaVersionSchema, id: IdSchema, projectId: IdSchema, label,
   createdAt: TimestampSchema, revokedAt: TimestampSchema.nullable(),
+  /** Last successfully verified handshake, not a continuous online/availability guarantee.
+   * Optional only for compatibility with older clients; current API always supplies null or a receipt time. */
+  lastHandshakeAt: TimestampSchema.nullable().optional(),
 });
 export const MintRunnerCredentialRequestSchema = z.strictObject({ schema_version: SchemaVersionSchema, label });
 export const MintRunnerCredentialResponseSchema = z.strictObject({
@@ -143,6 +146,8 @@ export const RunnerHandshakeRequestSchema = z.strictObject({
 export const RunnerHandshakeResponseSchema = z.strictObject({
   schema_version: SchemaVersionSchema, credentialId: IdSchema, projectId: IdSchema,
   leaseDurationSeconds: z.number().int().min(30).max(900),
+  /** Database receipt time of this successfully validated handshake. */
+  verifiedAt: TimestampSchema.optional(),
 });
 export const ClaimAttemptRequestSchema = z.strictObject({ schema_version: SchemaVersionSchema, assistantVersion: AssistantVersionSchema.optional() });
 export const ClaimAttemptResponseSchema = z.strictObject({
@@ -226,6 +231,13 @@ export const {
   pinReviewEvidence, validatePinnedReviewEvidence, validateApprovedExpectation, reviewEvidenceCoverage, reviewEvidenceLimitations,
   validateReviewRetry, prepareReviewDecision, selectSuiteCases, prepareSuitePublication, validatePublicationRetry,
 } = createReviewContracts({ targetInputSchema: TargetInputSchema, attemptSchema: AttemptSchema }, discoveryContracts);
+
+export * from './public-sample.js';
+import { createPublicSampleContracts } from './public-sample.js';
+export const { PublicSampleSchema, PublicCaseResponseSchema, PublicDiscoveryDetailSchema, PublicAttemptSchema } = createPublicSampleContracts({
+  TargetInputSchema, MappingConfirmationSchema, TargetResultSchema, AttemptSchema, ReviewDecisionSchema,
+  ReviewCaseSchema, ReviewHeadSchema, ExpectationVersionSchema,
+}, discoveryContracts);
 
 export * from './comparison.js';
 import { createComparisonContracts } from './comparison.js';

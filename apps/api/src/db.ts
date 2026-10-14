@@ -32,19 +32,21 @@ export interface VersionRow extends BaseRow { project_id: string; content: Recor
 export interface MappingRow extends BaseRow {
   project_id: string; catalog_version_id: string; catalog_entry_id: string; qloo_entity_id: string; confirmed_by: string;
 }
-export interface CredentialRow extends BaseRow { project_id: string; label: string; revoked_at: Date | null }
+export interface CredentialRow extends BaseRow { project_id: string; label: string; revoked_at: Date | null; last_handshake_at: Date | null }
 export interface AttemptRow extends BaseRow {
   project_id: string; catalog_version_id: string; task_version_id: string; pinned_input: unknown;
   input_checksum: string; status: Attempt['status']; lease_id: string | null; lease_credential_id: string | null;
   lease_expires_at: Date | null; result: unknown; result_checksum: string | null; completed_at: Date | null;
 }
 
-export const CREDENTIAL_COLUMNS = 'id, schema_version, project_id, label, created_at, revoked_at';
+export const CREDENTIAL_COLUMNS = `id, schema_version, project_id, label, created_at, revoked_at,
+  (SELECT h.last_verified_at FROM public.runner_handshakes h
+    WHERE h.credential_id=runner_credentials.id AND h.project_id=runner_credentials.project_id) AS last_handshake_at`;
 export const projectRecord = (row: ProjectRow) => ProjectSchema.parse({ schema_version: row.schema_version, id: row.id, ownerId: row.owner_id, name: row.name, createdAt: row.created_at.toISOString() });
 export const catalogRecord = (row: VersionRow) => CatalogVersionSchema.parse({ ...row.content, projectId: row.project_id, checksum: row.checksum, createdAt: row.created_at.toISOString() });
 export const taskRecord = (row: VersionRow) => TaskVersionSchema.parse({ ...row.content, projectId: row.project_id, checksum: row.checksum, createdAt: row.created_at.toISOString() });
 export const mappingRecord = (row: MappingRow) => MappingConfirmationSchema.parse({ schema_version: row.schema_version, id: row.id, projectId: row.project_id, catalogVersionId: row.catalog_version_id, catalogEntryId: row.catalog_entry_id, qlooEntityId: row.qloo_entity_id, confirmedBy: row.confirmed_by, createdAt: row.created_at.toISOString() });
-export const credentialRecord = (row: CredentialRow) => RunnerCredentialSchema.parse({ schema_version: row.schema_version, id: row.id, projectId: row.project_id, label: row.label, createdAt: row.created_at.toISOString(), revokedAt: row.revoked_at?.toISOString() ?? null });
+export const credentialRecord = (row: CredentialRow) => RunnerCredentialSchema.parse({ schema_version: row.schema_version, id: row.id, projectId: row.project_id, label: row.label, createdAt: row.created_at.toISOString(), revokedAt: row.revoked_at?.toISOString() ?? null, lastHandshakeAt: row.last_handshake_at?.toISOString() ?? null });
 export function attemptRecord(row: AttemptRow): Attempt {
   const input = TargetInputSchema.parse(row.pinned_input);
   return AttemptSchema.parse({

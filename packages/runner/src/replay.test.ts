@@ -211,6 +211,16 @@ test('per-target timeouts are execution-unavailable without retries, full replay
   assert.equal(calls, 1); assert.equal(bounded.comparisonReport.stopReason, 'deadline_exceeded'); assert.equal(bounded.comparisonReport.progress.uncertainDispatches, 1);
 });
 
+test('overall deadline timer stops dispatch even when wall-clock milliseconds have not advanced', async t => {
+  const pack = fixture(); const fixedNow = Date.now(); let calls = 0;
+  t.mock.method(Date, 'now', () => fixedNow);
+  const report = await replay(pack, async () => { calls++; return new Promise(() => {}); }, { replayTimeoutMs: 5 });
+  assert.equal(calls, 1);
+  assert.equal(report.comparisonReport.stopReason, 'deadline_exceeded');
+  assert.equal(report.comparisonReport.progress.uncertainDispatches, 1);
+  assert.equal(report.comparisonReport.progress.completed, 0);
+});
+
 test('invalid local budget/report identity configuration fails before any dispatch', async () => {
   const pack = fixture(); let calls = 0; const reportId = randomUUID();
   for (const extra of [{ targetTimeoutMs: 0 }, { replayTimeoutMs: 3_600_001 }, { reportId: 'not-a-uuid' }, { reportId, env: { ...env, LOCAL_SECRET: reportId } }]) {
@@ -288,4 +298,22 @@ test('CLI tampering before real LiteLLM mock transport and no release-to-model m
   const local = createLiteLLMAdapter({ env: providerEnv, fetch });
   const report = await replayComparisonFile({ packPath: path, role: 'candidate', assistantVersion: 'release-after', env: providerEnv, adapter: local });
   assert.equal(calls, 6); assert.ok(report.comparisonReport.limitations.includes('incomplete_traces'));
+});
+
+test('default OpenRouter replay validates the pack before dispatch and uses free Nemotron for the selected role', async () => {
+  const { pack, path } = await packFile();let calls=0;
+  const providerEnv={OPENROUTER_API_KEY:'synthetic-openrouter-local-key',TASTECASE_ASSISTANT_VERSION:'release-after'};
+  const fetch:typeof globalThis.fetch=async(url,request)=>{
+    calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');
+    const body=JSON.parse(String(request?.body)) as Record<string,unknown>;
+    assert.equal(body.model,'nvidia/nemotron-3-super-120b-a12b:free');
+    assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
+    return Response.json({choices:[{message:{content:JSON.stringify({recommendations:[{catalogEntryId:'one',name:'Synthetic'}]})}}]});
+  };
+  await writeFile(path,JSON.stringify({...pack,checksum:'0'.repeat(64)}));
+  assert.equal(await runCli(['replay','--pack',path,'--role','candidate'],{env:providerEnv,fetch,write:()=>{}}),1);
+  assert.equal(calls,0);
+  await writeFile(path,JSON.stringify(pack));const lines:string[]=[];
+  assert.equal(await runCli(['replay','--pack',path,'--role','candidate'],{env:providerEnv,fetch,write:line=>lines.push(line)}),0);
+  assert.equal(calls,6);assert.equal(lines.join('').includes(providerEnv.OPENROUTER_API_KEY),false);
 });

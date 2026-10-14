@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import pg from 'pg';
 import {
@@ -76,19 +75,17 @@ test('Gate 4 SQL: immutable published comparisons and bounded dispatch history',
     finally { await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`); await client.query(`RELEASE SAVEPOINT ${savepoint}`); }
   }
   try {
+    const migrations = await loadMigrations();
     const pool = new pg.Pool({ connectionString, max: 1 }); const setup = await pool.connect();
     try {
       await setup.query('BEGIN'); await bootstrapLocalTest(setup);
-      // The new SQL is applied transactionally below while under development. Its
-      // changing checksum is never entered into the normal migration ledger here.
-      const hasLedger = (await setup.query("SELECT to_regclass('public.tastecase_schema_migrations') IS NOT NULL AS present")).rows[0].present as boolean;
-      const registered = hasLedger && (await setup.query("SELECT 1 FROM public.tastecase_schema_migrations WHERE name='202610130005_comparisons.sql'")).rowCount === 1;
-      await applyMigrations(setup, (await loadMigrations()).filter(m => registered || m.name !== '202610130005_comparisons.sql'));
+      await applyMigrations(setup, migrations);
       await setup.query('COMMIT');
     } finally { setup.release(); await pool.end(); }
     await client.query('BEGIN'); await client.query("SELECT pg_advisory_xact_lock(hashtext('tastecase:migrations'))");
-    const sql = await readFile(new URL('./migrations/202610130005_comparisons.sql', import.meta.url), 'utf8');
-    await client.query(sql); await client.query(sql);
+    const original = migrations.find(m => m.name === '202610130005_comparisons.sql'); assert.ok(original);
+    await client.query(original.sql); await client.query(original.sql);
+    for (const migration of migrations.filter(m => m.name > original.name)) await client.query(migration.sql);
     const f = await fixture(client); const other = await fixture(client); const sibling = await fixture(client, f.projectId, f.ownerId, 1);
     const create = async (body: CreateComparisonRequest) => ComparisonCreateResponseSchema.parse((await client.query(createSQL, [f.projectId, f.ownerId, JSON.stringify(body)])).rows[0].value);
     const body = f.body(); const first = await create(body); const plan = first.comparison.plan;
@@ -274,11 +271,8 @@ test('Gate 4 SQL: independent-connection creation, dispatch-budget and finalizat
   try {
     await setup.query('BEGIN'); await bootstrapLocalTest(setup);
     const all = await loadMigrations();
-    const hasLedger = (await setup.query("SELECT to_regclass('public.tastecase_schema_migrations') IS NOT NULL AS present")).rows[0].present as boolean;
-    const registered = hasLedger && (await setup.query("SELECT 1 FROM public.tastecase_schema_migrations WHERE name='202610130005_comparisons.sql'")).rowCount === 1;
-    await applyMigrations(setup, all.filter(m => registered || m.name !== '202610130005_comparisons.sql'));
-    const migration = all.find(m => m.name === '202610130005_comparisons.sql'); assert.ok(migration);
-    await setup.query(migration.sql); f = await fixture(setup, randomUUID(), randomUUID(), 1); await setup.query('COMMIT');
+    await applyMigrations(setup, all);
+    f = await fixture(setup, randomUUID(), randomUUID(), 1); await setup.query('COMMIT');
     const request = f.body({ dispatchBudget: 4, reclaimBudget: 1 });
     const creations = await Promise.all([pool.query(createSQL, [f.projectId, f.ownerId, JSON.stringify(request)]), pool.query(createSQL, [f.projectId, f.ownerId, JSON.stringify(request)])]);
     const [a, b] = creations.map(result => ComparisonCreateResponseSchema.parse(result.rows[0].value)); assert.ok(a && b);

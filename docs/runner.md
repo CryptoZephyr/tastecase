@@ -1,6 +1,6 @@
 # Connect an authorized assistant
 
-The runner executes the owner's adapter locally. TasteCase accepts typed results, not uploaded application code or arbitrary target endpoints. The sample adapter uses an OpenAI-compatible LiteLLM endpoint configured by the runner owner.
+The runner executes the owner's adapter locally. TasteCase accepts typed results, not uploaded application code or arbitrary target endpoints. By default it uses NVIDIA Nemotron 3 Super through OpenRouter's free endpoint. The provider key stays on the runner machine.
 
 ## API owner setup
 
@@ -35,9 +35,8 @@ The IDs must belong to the same owned project. This example shows the shape, not
 |---|---|
 | `TASTECASE_API_ORIGIN` | Direct HTTPS API origin, without path/query/credentials |
 | `TASTECASE_RUNNER_TOKEN` | Project-scoped token minted by the API |
-| `LITELLM_BASE_URL` | Trusted local provider base, including `/v1` when needed |
-| `LITELLM_API_KEY` | Target provider credential; stays local |
-| `LITELLM_MODEL` | Defaults to `nova-micro` |
+| `OPENROUTER_API_KEY` | Local provider credential for the default free-only adapter |
+| `TASTECASE_MODEL_PROVIDER` | Optional: `openrouter` (default), or explicitly `litellm` for a separately configured provider |
 | `TASTECASE_ASSISTANT_VERSION` | Exact local release label required for comparison claims and offline replay |
 
 After building:
@@ -47,6 +46,12 @@ node packages/runner/dist/cli.js --help
 node packages/runner/dist/cli.js handshake
 node packages/runner/dist/cli.js run-once
 ```
+
+The default model is pinned to `nvidia/nemotron-3-super-120b-a12b:free` at `https://openrouter.ai/api/v1/chat/completions`. Requests require JSON, disable reasoning, cap output at 2048 tokens, disable provider fallback and enforce zero prompt/completion/request price ceilings. There is no paid fallback or automatic provider retry. Provider unavailability is visible, not an empty recommendation success. [Free-tier limits](https://openrouter.ai/docs/api/reference/limits) are shared across free models: 20 requests/minute and 50/day for an account with fewer than $10 in purchased credits. Discovery, comparison and replay all consume requests; budget them together. Free availability is not guaranteed.
+
+Baseline and Candidate can use this same model with different locally configured prompts or settings. The release label only attests that configuration; changing the label alone does not change the prompt. Custom adapters stay local.
+
+The old OpenAI-compatible adapter remains available only by explicitly setting `TASTECASE_MODEL_PROVIDER=litellm`, plus `LITELLM_API_KEY`, `LITELLM_BASE_URL` and optionally `LITELLM_MODEL` (legacy default `nova-micro`). Those settings are ignored by the default OpenRouter adapter. They are not a fallback, and any billing on an explicitly configured legacy provider is the runner owner's responsibility.
 
 For a loopback development API, add `--allow-loopback-http`. External HTTP and all redirects are rejected. Never pass tokens or keys as CLI arguments. Handshake needs no provider key and makes no target call.
 

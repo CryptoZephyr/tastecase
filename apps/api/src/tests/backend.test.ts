@@ -59,7 +59,8 @@ test('readiness requires review tables and publication RPCs', async () => {
     for (const relation of ['review_cases', 'review_heads', 'review_decisions', 'expectation_versions', 'suites', 'suite_versions', 'suite_version_cases']) {
       assert.ok(queries.some(sql => sql.includes(`public.${relation}`)));
     }
-    for (const absent of ['public.review_cases', 'public.record_review_decision', 'public.publish_suite']) {
+    assert.ok(queries.some(sql => sql.includes('public.runner_handshakes') && sql.includes('last_verified_at')));
+    for (const absent of ['public.review_cases', 'public.record_review_decision', 'public.publish_suite', 'public.runner_handshakes']) {
       missing = absent;
       assert.equal((await app.inject('/ready')).statusCode, 503);
       assert.equal((await app.inject('/health')).statusCode, 200);
