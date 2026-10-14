@@ -3,12 +3,12 @@ import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { DiscoveryStore, PoolDatabase } from './store.js';
 import { OfficialQlooAdapter } from './qloo.js';
-import { NovaMicroDecisionAdapter } from './decision.js';
+import { OpenRouterDecisionAdapter } from './decision.js';
 import { runDiscoveryLoop, type WorkerOptions } from './engine.js';
 
 /** Requires already-migrated backend Postgres and backend-only provider credentials. */
 export async function startDiscoveryWorker(signal: AbortSignal, options: WorkerOptions = {}) {
-  const database = process.env.DATABASE_URL; const key = process.env.LiteLLM_API_KEY;
+  const database = process.env.DATABASE_URL; const key = process.env.OPENROUTER_API_KEY;
   if (!database || !key || !process.env.QLOO_API_KEY) throw new TypeError('Discovery backend configuration is incomplete');
   const url = new URL(database);
   if (!['postgres:','postgresql:'].includes(url.protocol)) throw new TypeError('PostgreSQL configuration required');
@@ -24,7 +24,7 @@ export async function startDiscoveryWorker(signal: AbortSignal, options: WorkerO
   });
   try {
     await runDiscoveryLoop(new DiscoveryStore(new PoolDatabase(pool)),{
-      qloo:()=>new OfficialQlooAdapter(),decision:new NovaMicroDecisionAdapter(key),
+      qloo:()=>new OfficialQlooAdapter(),decision:new OpenRouterDecisionAdapter(key),
     },signal,options);
   } finally { await pool.end(); }
 }

@@ -6,7 +6,8 @@ import {
   UploadTargetResultRequestSchema, checksum, type ClaimAttemptResponse, type TargetAdapter, type TargetResult,
 } from '@tastecase/contracts';
 import {
-  RunnerClient, RunnerError, createLiteLLMAdapter, runCli, runOnce, validateEndpoint, type Fetch,
+  RunnerClient, RunnerError, createLiteLLMAdapter, createConfiguredAdapter, configuredAdapterMetadata,
+  OPENROUTER_ADAPTER_METADATA, OPENROUTER_MODEL, runCli, runOnce, validateEndpoint, type Fetch,
 } from './index.js';
 
 // All IDs, text and credentials below are synthetic. No environment inheritance/live fetch.
@@ -569,8 +570,66 @@ test('CLI handshake requires no provider key and outputs metadata only', async (
   const { fetch, requests } = mockApi();
   assert.equal(await runCli(['handshake'], { env: { ...env, LITELLM_API_KEY: undefined }, fetch, write: line => lines.push(line) }), 0);
   assert.equal(requests.length, 1);
+  assert.deepEqual((requests[0].body as {adapter:unknown}).adapter,OPENROUTER_ADAPTER_METADATA);
   assert.equal((JSON.parse(lines[0]) as { status: string }).status, 'ready');
   assert.equal(lines.join('\n').includes(token) || lines.join('\n').includes(key), false);
+});
+
+test('default configured adapter pins free Nemotron and ignores legacy provider environment', async () => {
+  let calls=0;
+  const local=createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:key,LITELLM_MODEL:'paid-model'},fetch:async(url,init)=>{
+    calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(new Headers(init?.headers).get('authorization'),`Bearer ${key}`);
+    assert.equal(init?.redirect,'manual');
+    const body=JSON.parse(String(init?.body)) as Record<string,unknown>;
+    assert.equal(body.model,OPENROUTER_MODEL);
+    assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
+    assert.deepEqual(body.reasoning,{enabled:false,exclude:true});assert.deepEqual(body.response_format,{type:'json_object'});
+    assert.equal(body.max_tokens,2048);assert.equal(body.temperature,0);
+    for (const secret of [key,token,id(1),id(2),'Ineligible synthetic fact','synthetic-bistro']) assert.equal(String(init?.body).includes(secret),false);
+    return completion('{"recommendations":[{"catalogEntryId":"synthetic-cafe","name":"Synthetic Cafe"}]}');
+  }});
+  assert.equal(local.name,OPENROUTER_ADAPTER_METADATA.name);
+  const result=await local.run(syntheticClaim().input,context());
+  assert.equal(result.outcome,'success');assert.equal(result.trace.completeness,'partial');assert.equal(calls,1);
+});
+
+test('OpenRouter requires its own key; legacy adapter is explicit and never an automatic fallback', async () => {
+  assert.throws(()=>createConfiguredAdapter({env}),{code:'configuration_error'});
+  assert.throws(()=>createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:'invalid\nkey'}}),{code:'configuration_error'});
+  assert.throws(()=>createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:key},model:'paid-model'}),{code:'configuration_error'});
+  assert.throws(()=>createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:key},baseUrl:'https://other.example/v1'}),{code:'configuration_error'});
+  assert.throws(()=>configuredAdapterMetadata({TASTECASE_MODEL_PROVIDER:'unknown'}),{code:'configuration_error'});
+  const legacy=createConfiguredAdapter({env:{...env,TASTECASE_MODEL_PROVIDER:'litellm'},fetch:async url=>{
+    assert.equal(String(url),'https://model.example.test/v1/chat/completions');return completion('{"recommendations":[]}');
+  }});
+  assert.equal(legacy.name,'litellm-openai');assert.equal((await legacy.run(syntheticClaim().input,context())).outcome,'success');
+});
+
+test('OpenRouter failures are one dispatch with safe auth, rate-limit and malformed-output states', async () => {
+  for (const status of [401,402,403,429,500]) {
+    let calls=0;
+    const local=createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:key},fetch:async()=>{calls++;return new Response(`${key} ${token}`,{status});}});
+    const result=await local.run(syntheticClaim().input,context());
+    assert.equal(result.outcome,'provider_unavailable');assert.equal(calls,1);
+    assert.equal(JSON.stringify(result).includes(key)||JSON.stringify(result).includes(token),false);
+    if (result.outcome==='provider_unavailable') assert.equal(result.error.code,status===401||status===403?'provider_authentication_failed':status===429?'provider_rate_limited':'provider_http_error');
+  }
+  const local=createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:key},fetch:async()=>completion(`invalid ${key} ${token}`)});
+  const result=await local.run(syntheticClaim().input,context());
+  assert.equal(result.outcome,'malformed_output');assert.equal(JSON.stringify(result).includes(key)||JSON.stringify(result).includes(token),false);
+});
+
+test('CLI run-once uses the default OpenRouter adapter for claim, dispatch and upload', async () => {
+  const api=mockApi();const lines:string[]=[];let modelCalls=0;
+  const fetch:Fetch=async(url,init)=>{
+    if(String(url).startsWith('https://openrouter.ai/')){modelCalls++;return completion('{"recommendations":[{"catalogEntryId":"synthetic-cafe","name":"Synthetic Cafe"}]}');}
+    return api.fetch(url,init);
+  };
+  assert.equal(await runCli(['run-once'],{env:{...env,OPENROUTER_API_KEY:key},fetch,write:line=>lines.push(line)}),0);
+  assert.equal(modelCalls,1);assert.equal(api.requests.length,3);
+  assert.equal(JSON.parse(lines[0]).outcome,'success');
+  assert.equal(lines.join('').includes(key)||lines.join('').includes(token),false);
 });
 
 test('CLI run-once prints no target/raw text or pending result and returns no-work/completed exits', async () => {
@@ -601,5 +660,6 @@ test('CLI rejects unexpected/secret-bearing arguments without echo, help documen
   assert.equal(await runCli(['--help'], { write: line => lines.push(line) }), 0);
   assert.match(lines[0], /nova-micro/);
   assert.match(lines[0], /LITELLM_API_KEY/);
+  assert.match(lines[0], /OPENROUTER_API_KEY/);
   assert.ok(new RunnerError('invalid_response', 'Synthetic safe error') instanceof Error);
 });

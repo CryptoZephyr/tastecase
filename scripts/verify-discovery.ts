@@ -10,15 +10,15 @@ import {
   DiscoveryJobDetailResponseSchema, AttemptSchema,
 } from '@tastecase/contracts';
 import { buildServer, buildBackend } from '../apps/api/src/index.js';
-import { OfficialQlooAdapter, NovaMicroDecisionAdapter } from '@tastecase/worker';
-import { RunnerClient, createLiteLLMAdapter, runOnce } from '@tastecase/runner';
+import { OfficialQlooAdapter, OpenRouterDecisionAdapter } from '@tastecase/worker';
+import { RunnerClient, createConfiguredAdapter, runOnce } from '@tastecase/runner';
 
 let stage = 'configuration';
 async function main() {
   if (process.env.TASTECASE_LIVE_VERIFY !== '1') throw new Error('Live verification must be explicitly enabled.');
   const databaseUrl = process.env.DATABASE_URL;
   const fixtures = process.env.TASTECASE_QLOO_FIXTURE_DIRECTORY;
-  const key = process.env.LiteLLM_API_KEY;
+  const key = process.env.OPENROUTER_API_KEY;
   if (!databaseUrl || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(databaseUrl).hostname)
     || new URL(databaseUrl).pathname !== '/tastecase_test' || !fixtures || !key || !process.env.QLOO_API_KEY) throw new Error('Local verified fixtures and providers are required.');
   const availableCatalog = z.array(z.object({ name: z.string(), qloo_id: IdSchema })).min(2).max(10)
@@ -62,19 +62,19 @@ async function main() {
     }
     const credential = MintRunnerCredentialResponseSchema.parse(await owner(path + '/runner-credentials', { ...v, label: 'Local live discovery runner' })); credentialId = credential.credential.id;
     const body = { ...v, id: randomUUID(), catalogVersionId: catalog.id, taskVersionId: task.id, mappingConfirmationIds: mappingIds,
-      eligibleCatalogEntryIds: catalog.entries.map(entry => entry.id), assistantVersion: 'nova-micro/live-verification',
+      eligibleCatalogEntryIds: catalog.entries.map(entry => entry.id), assistantVersion: 'nemotron/live-verification',
       profiles: anchors.map((anchor, index) => ({ id: index === 0 ? 'a' : 'b', provenance: 'public_synthetic', label: `Fictional ${anchor.label} profile`, anchors: [anchor] })),
       budgets: { qlooAttempts: 8, modelDecisions: 1, targetAttempts: 6, rounds: 2, deadlineSeconds: 1200, retriesPerOperation: 1 }, repeatCount: 2, reducePair: true };
     const job = DiscoveryJobSchema.parse(await owner(path + '/discovery-jobs', body)); jobId = job.id;
     const read = async () => DiscoveryJobDetailResponseSchema.parse(await owner(path + '/discovery-jobs/' + job.id));
     const start = async () => {
       await app.close();
-      const backend = buildBackend({ pool, auth, adapters: { qloo: () => new OfficialQlooAdapter(), decision: new NovaMicroDecisionAdapter(key) },
+      const backend = buildBackend({ pool, auth, adapters: { qloo: () => new OfficialQlooAdapter(), decision: new OpenRouterDecisionAdapter(key) },
         workerOptions: { projectId: project.id, pollMilliseconds: 100, heartbeatMilliseconds: 250 } });
       app = backend.app; origin = await app.listen({ host: '127.0.0.1', port: 0 }); void backend.startWorker();
     };
     await start();
-    const adapter = createLiteLLMAdapter({ env: { LITELLM_API_KEY: key, LITELLM_BASE_URL: 'https://litellm.vision.aivar.app/v1', LITELLM_MODEL: 'nova-micro' } });
+    const adapter = createConfiguredAdapter({ env: { OPENROUTER_API_KEY: key } });
     const terminal = new Set(['awaiting_review', 'partial', 'unavailable', 'no_useful_contrast', 'failed', 'cancelled', 'budget_exhausted', 'deadline_exceeded', 'needs_confirmation']);
     const deadline = Date.now() + 1200000;
     stage = 'discovery_and_runner';

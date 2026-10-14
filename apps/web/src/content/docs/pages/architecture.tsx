@@ -19,13 +19,13 @@ export const architecture: DocSection = {
   },
   'agent-loop': {
     headings: [{ id: 'bounded', label: 'A bounded loop' }, { id: 'model', label: 'What the model may decide' }, { id: 'investigation', label: 'Investigation' }],
-    keywords: ['worker', 'nova micro', 'model decision', 'contrast'],
+    keywords: ['worker', 'nemotron', 'model decision', 'contrast'],
     Body: () => (
       <>
         <H2 id="bounded">A bounded loop</H2>
         <p>The discovery worker leases a job, resolves and confirms public interests, ranks the catalog for both profiles, computes contrasts, chooses one to investigate, schedules runner attempts and saves a candidate case. Rounds, Qloo calls, model decisions, assistant runs and wall-clock time are all budgeted.</p>
         <H2 id="model">What the model may decide</H2>
-        <p>The decision model (Nova Micro through LiteLLM) may only pick one software-computed contrast ID, or none. It can’t choose tools, invent ranking facts or declare a taste failure, and its prose isn’t treated as evidence. Output that references an unsupported contrast is rejected.</p>
+        <p>The decision model (NVIDIA Nemotron 3 Super through OpenRouter’s free endpoint) may only pick one software-computed contrast ID, or none. It can’t choose tools, invent ranking facts or declare a taste failure, and its prose isn’t treated as evidence. Output that references an unsupported contrast is rejected.</p>
         <H2 id="investigation">Investigation</H2>
         <p>The runner repeats both full briefs and, if enabled, asks a focused question about just the two contrasting restaurants. Practical constraints and the eligible catalog never change during investigation.</p>
       </>

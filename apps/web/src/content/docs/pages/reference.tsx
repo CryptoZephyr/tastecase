@@ -22,7 +22,7 @@ export const reference: DocSection = {
           [<code key="p">provider_unavailable</code>, 'No usable provider response, with a safe error and a retryable flag.'],
         ]} />
         <H2 id="trace">Trace</H2>
-        <p>Every result has a normalised trace with completeness <code>complete</code>, <code>partial</code> or <code>unavailable</code>, and metadata-only events (start, completion, tool call, tool result). No headers, bodies, tool arguments or credentials. The sample LiteLLM adapter records only start/end metadata and labels its trace partial.</p>
+        <p>Every result has a normalised trace with completeness <code>complete</code>, <code>partial</code> or <code>unavailable</code>, and metadata-only events (start, completion, tool call, tool result). No headers, bodies, tool arguments or credentials. The default OpenRouter adapter records only start/end metadata and labels its trace partial.</p>
       </>
     ),
   },
@@ -103,7 +103,7 @@ export const reference: DocSection = {
           [<code key="h">HOST</code>, 'Bind address; loopback by default.'], [<code key="p">PORT</code>, 'HTTP port.'],
           [<code key="s">SUPABASE_URL</code>, 'Verifies real owner sessions.'], [<code key="a">SUPABASE_ANON_KEY</code>, 'Supabase public key for session verification.'],
           [<code key="ca">NODE_EXTRA_CA_CERTS</code>, 'Path to Supabase’s CA certificate.'], [<code key="cf">DATABASE_SSL_CA_FILE</code>, 'Same certificate for the database client.'],
-          [<code key="q">QLOO_API_KEY</code>, 'Backend-only Qloo credential.'], [<code key="l">LiteLLM_API_KEY</code>, 'Backend decision model credential.'],
+          [<code key="q">QLOO_API_KEY</code>, 'Backend-only Qloo credential.'], [<code key="l">OPENROUTER_API_KEY</code>, 'Backend-only free Nemotron decision model credential.'],
           [<code key="sp">TASTECASE_PUBLIC_SAMPLE_PROJECT_ID</code>, 'Server-only allowlist: dedicated synthetic sample project UUID. No default.'],
           [<code key="sc">TASTECASE_PUBLIC_SAMPLE_CASE_ID</code>, 'Server-only allowlist: recorded case UUID in that project. Never a browser selector.'],
           [<code key="ss">TASTECASE_PUBLIC_SAMPLE_INPUTS_SYNTHETIC</code>, 'Set to true only after reviewing the dedicated inputs as synthetic. All sample settings are required together.'],
@@ -111,10 +111,10 @@ export const reference: DocSection = {
         <H2 id="runner">Runner</H2>
         <Table label="Runner variables" head={['Variable', 'Purpose']} rows={[
           [<code key="o">TASTECASE_API_ORIGIN</code>, 'HTTPS API origin, with no path, query or credentials.'], [<code key="t">TASTECASE_RUNNER_TOKEN</code>, 'Project-scoped token shown once at creation.'],
-          [<code key="b">LITELLM_BASE_URL</code>, 'Your provider base URL, including /v1 when needed.'], [<code key="k">LITELLM_API_KEY</code>, 'Your provider key. Stays local.'],
-          [<code key="m">LITELLM_MODEL</code>, 'Optional; defaults to nova-micro.'], [<code key="v">TASTECASE_ASSISTANT_VERSION</code>, 'Exact release label, required for comparisons and replay.'],
+          [<code key="k">OPENROUTER_API_KEY</code>, 'Local provider key for the default free-only Nemotron adapter.'], [<code key="p">TASTECASE_MODEL_PROVIDER</code>, 'Optional: openrouter (default), or explicit litellm. No automatic fallback.'],
+          [<code key="v">TASTECASE_ASSISTANT_VERSION</code>, 'Exact release label, required for comparisons and replay.'],
         ]} />
-        <p>Never pass keys or tokens as command-line arguments.</p>
+        <p>The default adapter pins <code>nvidia/nemotron-3-super-120b-a12b:free</code>, enforces zero-price routing and disables paid fallback. Free accounts with fewer than $10 in purchased credits have a shared limit of 50 free-model requests/day and 20/minute. Baseline and Candidate can use the same model, but their labels alone do not change its prompt. Never pass keys or tokens as command-line arguments.</p>
         <H2 id="web">Web app</H2>
         <Table label="Web app variables" head={['Variable', 'Purpose']} rows={[
           [<code key="o">TASTECASE_API_ORIGIN</code>, 'Server-only fixed API origin for the same-origin proxy: HTTPS, or loopback HTTP for local development. No path, query or credentials.'],

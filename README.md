@@ -8,7 +8,7 @@ Live demo: not available · Video: not available · Docs: [discovery](docs/disco
 
 The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. Local integration checks pass; browser verification and hosting are still pending. No product screenshots of real results exist yet.
 
-Built with: Qloo official MCP · Nova Micro · Supabase · Fastify / Node · Next.js / React Aria Components
+Built with: Qloo official MCP · NVIDIA Nemotron 3 Super (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
 **Status: private web app, backend and runner. Web/API wiring checked locally; earlier backend checks used live providers and hosted Supabase. No deployed app or provisioned public sample.**
 
@@ -18,7 +18,7 @@ A prompt or model change can alter a concierge's restaurant choices while its an
 
 ## What TasteCase does
 
-The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nova Micro selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
+The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nemotron selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
 
 Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally. **The web app is wired, but the complete browser journey and hosting are not verified.**
 
@@ -26,7 +26,7 @@ Owned projects, immutable inputs, scoped runner access, discovery/recovery, huma
 
 1. The owner creates a project, pins restaurant/task versions and confirms public Qloo mappings.
 2. A bounded discovery job ranks the same eligible options for two explicit synthetic profiles.
-3. Code checks coverage and ranking changes. Nova Micro chooses only from those observed contrasts.
+3. Code checks coverage and ranking changes. Nemotron chooses only from those observed contrasts.
 4. A project-scoped runner calls the owner's locally configured assistant. Its credentials never go to the backend.
 5. Repeats and a smaller Qloo comparison investigate the selected pair without changing practical constraints or the target's eligible catalog.
 6. Immutable evidence and checksums survive restart. A saved taste finding still requires human approval; it is not a failed test.
@@ -71,7 +71,7 @@ flowchart TB
   Web --> Backend["One Node process: API + discovery worker"]
   Backend <--> DB["Postgres: inputs, leases, checkpoints, evidence"]
   Backend --> MCP["Official Qloo MCP child"]
-  Backend --> Nova["Nova Micro: bounded contrast choice"]
+  Backend --> Model["Free Nemotron: bounded contrast choice"]
   Runner["Local project-scoped runner"] <--> Backend
   Runner --> Target["Owner's assistant; credentials stay local"]
 ```
@@ -81,7 +81,7 @@ flowchart TB
 | Tool | Role | Current state |
 |---|---|---|
 | Qloo official MCP | Resolve public anchors and rank the fixed eligible options | Integrated worker, live full/reduced rankings and missing-coverage handling verified |
-| LiteLLM / Nova Micro | Choose a code-verified contrast; sample runner target | Live decision and six real target calls verified; unsupported model output is rejected |
+| OpenRouter / NVIDIA Nemotron 3 Super (free) | Choose a code-verified contrast; default local runner target | Free-only routing with no paid fallback; small live JSON-compatibility checks passed. Full Nemotron journey verification pending |
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
 | Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; browser journey unverified |
 | Fastify / Node | One API/worker process with a Postgres-backed queue | Local startup, readiness, cancellation and restart tests pass |
@@ -89,7 +89,7 @@ flowchart TB
 
 ## What's running
 
-A dedicated Supabase project holds the private database and Auth/Storage configuration. The API, discovery worker and runner have run on loopback for verification; they are **not publicly hosted**. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the model is `nova-micro` through LiteLLM.
+A dedicated Supabase project holds the private database and Auth/Storage configuration. The API, discovery worker and runner have run on loopback for verification; they are **not publicly hosted**. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter. Earlier Nova Micro evidence below is historical, not verification of the new route.
 
 ## Evidence
 
@@ -127,7 +127,7 @@ Proof metadata remains in ignored local storage, not in published provider-respo
 - `apps/api`: owner/runner/discovery/review/suite/comparison routes, single-process backend and migration CLI.
 - `apps/worker`: guarded MCP/model adapters, bounded investigations and recovery.
 - `packages/contracts`: shared validation, pinned inputs and checksums.
-- `packages/runner`: local runtime, CLI and LiteLLM sample adapter.
+- `packages/runner`: local runtime, CLI, free-only Nemotron adapter and explicit legacy OpenAI-compatible adapter.
 - `supabase`: migrations and database-invariant tests.
 - `scripts`: opt-in live runner/discovery verification.
 
@@ -140,7 +140,7 @@ npm ci --ignore-scripts
 npm run build
 ```
 
-Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `QLOO_API_KEY` and `LiteLLM_API_KEY` in the backend environment; names and local defaults are in [.env.example](.env.example). The API does not automatically load that file. Use a dedicated database, never an unrelated product's database.
+Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `QLOO_API_KEY` and `OPENROUTER_API_KEY` in the backend environment; names and local defaults are in [.env.example](.env.example). The API does not automatically load that file. Use a dedicated database, never an unrelated product's database.
 
 Apply migrations and start the API:
 
