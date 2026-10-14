@@ -9,7 +9,7 @@ The initial deployment uses merged commit `1d686066eca1119e7e4232a6730fa1e50009d
 | Auth, Postgres and private storage | Dedicated TasteCase Supabase project | Existing free project |
 | Assistant runner | Owner's machine or server | Not hosted by TasteCase |
 
-The API's `/health` endpoint checks liveness; `/ready` checks the database and running discovery loop. It does not attest to Qloo/model availability or claim a test passed. The anonymous public sample is not configured.
+The API's `/health` endpoint checks liveness; `/ready` checks the database and running discovery loop. It does not attest to Qloo/model availability or claim a test passed. The [public sample](https://tastecase.vercel.app/sample) is configured as a read-only recorded example with fictional inputs.
 
 ## Render settings
 
@@ -21,6 +21,8 @@ The API's `/health` endpoint checks liveness; `/ready` checks the database and r
 - Automatic deployments wait for checks to pass. Never change the instance to a paid plan or attach a paid disk without owner approval.
 
 Set backend-only `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `QLOO_API_KEY` and `OPENROUTER_API_KEY` through Render's environment settings. No target assistant credentials are accepted by the backend.
+
+For a public sample, set `TASTECASE_PUBLIC_SAMPLE_PROJECT_ID`, `TASTECASE_PUBLIC_SAMPLE_CASE_ID` and `TASTECASE_PUBLIC_SAMPLE_INPUTS_SYNTHETIC=true` together, only after reviewing the dedicated synthetic inputs and genuine saved provider evidence. These settings select one saved case on the server; visitors cannot select another project or start provider work. Incomplete or unsafe sample evidence returns unavailable, never invented results.
 
 Set both `NODE_EXTRA_CA_CERTS` and `DATABASE_SSL_CA_FILE` to `/opt/render/project/src/supabase/certs/prod-ca-2021.crt`. The database URL must use the dedicated TasteCase session pooler and `sslmode=verify-full`. Do not weaken certificate verification.
 
@@ -49,7 +51,7 @@ The selected Nemotron model is free-only with no paid/provider fallback. Baselin
 - All free services in the Render workspace share 750 instance hours per calendar month. Existing services were not suspended or modified.
 - Render bandwidth and build-minute overages can be billed if the workspace has a payment method. This deployment did not upgrade any service; workspace billing controls and remaining shared quotas were not independently verified through the API. Review the workspace's Billing page before inviting broad traffic.
 - OpenRouter free-model allowance is shared and availability can change. Rate-limit/provider failures must remain unavailable, not become paid retries or fabricated results.
-- No synthetic public sample has been selected and provisioned. Private cases are never used as an anonymous fallback.
+- The public sample reads saved evidence without new Qloo/model calls. It still needs the API to be awake. Private projects are never used as an anonymous fallback.
 
 References: [Render free instances](https://render.com/docs/free), [Vercel environments](https://vercel.com/docs/deployments/overview).
 
@@ -57,4 +59,6 @@ References: [Render free instances](https://render.com/docs/free), [Vercel envir
 
 On 2026-10-14 the deployed browser journey reached a real saved case, advisory review, published suite, complete 8/8 comparison, frozen JSON/text/pack downloads and reopening. One hosted decision and ten local Nemotron assistant requests were made; the ten locally observed assistant responses reported $0. Four Qloo calls were used, with no model retries or paid fallback. The discovery case stayed partial/advisory; a complete comparison is not an automatic correctness pass.
 
-One transient session-verification timeout recovered through visible retry without changing the frozen report checksum. Its cause was not established. Email-link completion, deliberate cold-start recovery, cancellation, objective-rule failure and CLI replay were not covered. Both test runner credentials were revoked and only the two disposable Auth owners were deleted. The correction to the setup snippet in this PR is separate from the initial live commit.
+One transient session-verification timeout recovered through visible retry without changing the frozen report checksum. Its cause was not established. Email-link completion, deliberate cold-start recovery, cancellation, objective-rule failure and CLI replay were not covered. Both test runner credentials were revoked and only the two disposable Auth owners were deleted. The setup snippet was subsequently corrected in [PR #4](https://github.com/CryptoZephyr/tastecase/pull/4).
+
+The public sample was subsequently selected from a previously reviewed synthetic Qloo/Nemotron run. Anonymous API and Vercel-proxy responses passed schema and private-field checks; caller-supplied selectors and writes were rejected. Provisioning it made no new Qloo or model calls. These are HTTP checks, not a fresh browser walkthrough of the sample.

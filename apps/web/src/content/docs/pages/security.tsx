@@ -8,9 +8,9 @@ export const security: DocSection = {
     Body: () => (
       <>
         <H2 id="layers">Isolation at every layer</H2>
-        <p>Every private row carries its project boundary. The API checks project ownership on every owner route; Postgres enforces forced row-level owner isolation; composite foreign keys prevent cross-project references; private storage denies anonymous, public and cross-project access; runner tokens are bound to one project.</p>
+        <p>Your private project is available only to its signed-in owner. Both the API and database enforce this boundary, and private files are not publicly readable. A runner token can access work only in its own project. The public sample is one explicitly selected fictional example, not a way to browse other projects.</p>
         <H2 id="not-found">Not found, not forbidden</H2>
-        <p>Another account receives 404 for your projects, jobs, evidence, cases, suites and artifacts. The web app shows that as “not found or belongs to another account” — never as an empty list.</p>
+        <p>If another account opens your private link, TasteCase says it could not find it. This avoids revealing whether the project or record exists.</p>
       </>
     ),
   },
@@ -20,11 +20,11 @@ export const security: DocSection = {
     Body: () => (
       <>
         <H2 id="owner">Owner sessions</H2>
-        <p>Owner requests are verified through Supabase Auth on the server, not by decoding token claims or trusting caller-supplied owner IDs.</p>
+        <p>TasteCase checks your sign-in session with Supabase before allowing private requests. Expired sessions require you to sign in again.</p>
         <H2 id="runner">Runner tokens</H2>
-        <p>A runner token is 32 random bytes, shown once at creation. Only its SHA-256 hash is stored, and listings never return the token or hash. Revocation stops new handshakes, claims and uploads immediately.</p>
+        <p>A runner token is a secret password for one project’s runner. It is shown only once. Keep it out of chat, screenshots and source code. TasteCase stores a one-way fingerprint, not the token itself. Revoke it if it is lost or exposed; the runner can no longer connect, pick up work or upload results.</p>
         <H2 id="provider">Provider keys</H2>
-        <p>Your assistant’s provider key lives only in the runner’s environment. The hosted app never asks for it. Qloo and decision-model keys stay on the backend; the Qloo child process receives only what it needs.</p>
+        <p>Your assistant’s model-provider key stays on the runner machine. Do not paste it into the website. TasteCase’s own Qloo and case-selection keys stay on its backend. See the configuration reference for the exact settings.</p>
       </>
     ),
   },
@@ -34,11 +34,11 @@ export const security: DocSection = {
     Body: () => (
       <>
         <H2 id="qloo">To Qloo</H2>
-        <p>Only genuinely public cultural anchors and your catalog’s confirmed entity IDs. No names, emails, account or device IDs, guest histories or credentials. Profile interests must be public entities; that provenance is your responsibility, not a semantic detector’s.</p>
+        <p>Use fictional diners and public interests, such as artists or films. Qloo receives those interests and confirmed restaurant IDs, not real guest names, email addresses, histories or model keys. You are responsible for supplying public, safe-to-use inputs.</p>
         <H2 id="exports">Into exports</H2>
-        <p>Test packs contain pinned synthetic inputs, approved checks and structural evidence references — not Qloo responses, assistant text, trace events or credentials. Required input that looks like a credential or URL is refused, not silently redacted. Detection is conservative, not a universal secret scanner.</p>
+        <p>Downloaded test packs include the fictional requests and approved checks, not model keys, Qloo response bodies, assistant text or activity logs. Inputs that look like credentials or URLs are rejected rather than quietly changed. These checks are not a complete secret scanner; review what you put into a project.</p>
         <H2 id="repo">Never in the repository</H2>
-        <p>Credentials, raw Qloo responses, personal guest histories and local evidence are never committed.</p>
+        <p>Do not commit credentials, raw Qloo replies, personal guest histories or local test records to source control.</p>
       </>
     ),
   },
@@ -48,11 +48,11 @@ export const security: DocSection = {
     Body: () => (
       <>
         <H2 id="model">Model output</H2>
-        <p>The decision model can only choose from code-computed contrast IDs. Unsupported choices or extra claims are rejected rather than stored as a verdict. Tools run only through a schema-validated allowlist within budgets.</p>
+        <p>The case-selection model can only choose from pairs already found in the rankings. It cannot invent evidence or declare a taste failure. Unsupported choices are rejected, and provider operations have fixed limits.</p>
         <H2 id="adapter">Adapter results</H2>
-        <p>Uploaded results are validated against the contract, bounded in size and checksummed. Malformed output is stored as malformed — never coerced into a recommendation.</p>
+        <p>Returned answers must match the expected format and size limit. An invalid answer is shown as malformed, not silently rewritten into a recommendation.</p>
         <H2 id="display">In the web app</H2>
-        <p>Assistant text, names and provider messages are rendered as plain text, never as HTML or links.</p>
+        <p>The app treats assistant text and provider messages as text, not code to run. It does not turn them into executable HTML or clickable links.</p>
       </>
     ),
   },

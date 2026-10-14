@@ -10,7 +10,7 @@ The web app (`apps/web`) follows the owner-approved design and is connected thro
 
 Built with: Qloo official MCP · NVIDIA Nemotron 3 Super (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
-**Status: hosted web app, private projects, backend and local runner. The repository stays private. The anonymous public sample is not provisioned.**
+**Status: hosted web app, private projects, backend, local runner and a read-only [public sample](https://tastecase.vercel.app/sample). The repository stays private.**
 
 ![TasteCase's live homepage](docs/images/live-homepage.png)
 
@@ -58,11 +58,11 @@ Missing cultural evidence is not a negative preference. An incomplete trace cann
 
 ## Try it
 
-Open the [hosted app](https://tastecase.vercel.app) or [in-app docs](https://tastecase.vercel.app/docs). Private work requires sign-in and an authorised local runner. **Inspect a case** currently shows an honest unavailable state: no recorded anonymous sample is configured. Live checks require authorised credentials and provider allowance; CI uses synthetic fixtures instead.
+Start with [Inspect a case](https://tastecase.vercel.app/sample), a saved example you can read without an account or model key. Its diners are fictional; the Qloo rankings and assistant answers came from a real run. Reading it makes no new provider calls. To test your own assistant, sign in to the [hosted app](https://tastecase.vercel.app) and connect your local runner. See the [in-app docs](https://tastecase.vercel.app/docs) for the steps. Live runs need authorised credentials and provider allowance; CI uses synthetic fixtures instead.
 
 ## Product / demo
 
-The product has a hosted web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. The anonymous sample remains unavailable.
+The product has a hosted web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. The public sample shows one recorded case, not an interactive run of every product step.
 
 ## Architecture
 
@@ -195,7 +195,7 @@ npm run dev:web                                   # http://localhost:3100
 
 The web app talks to the API through `apps/web/src/lib/api/port.ts`. Its HTTP transport sends verified owner Bearer tokens through `/api/tastecase/*`; the proxy permits only documented owner/public routes to one fixed backend origin. It does not proxy runner credentials, follow redirects or accept arbitrary destinations. Private screens hide during unknown/expired authentication and remount when the owner changes. Missing configuration and unavailable evidence remain explicit errors, not empty successes. In development, `/dev/states` shows clearly labelled synthetic fixtures; these routes are excluded from `next build`.
 
-The public sample endpoint is implemented but **not provisioned**. It returns unavailable until the API is configured with `TASTECASE_PUBLIC_SAMPLE_PROJECT_ID`, `TASTECASE_PUBLIC_SAMPLE_CASE_ID` and `TASTECASE_PUBLIC_SAMPLE_INPUTS_SYNTHETIC=true`. Use only a dedicated, reviewed synthetic project with genuine persisted Qloo rankings, executed assistant output and a saved review. The anonymous route accepts no selectors, strips private metadata and never starts provider work. A recorded sample is not live processing, and its source checksums are provenance references rather than checksums of the public display projection.
+The [public sample](https://tastecase.vercel.app/sample) is configured on the hosted API using `TASTECASE_PUBLIC_SAMPLE_PROJECT_ID`, `TASTECASE_PUBLIC_SAMPLE_CASE_ID` and `TASTECASE_PUBLIC_SAMPLE_INPUTS_SYNTHETIC=true`. Other deployments return unavailable until all three are set. Select only a dedicated, reviewed synthetic project with genuine saved Qloo rankings, assistant answers and a review. The anonymous route accepts no selectors, strips private metadata and never starts provider work. Its response was verified through the API and Vercel proxy, including schema checks, hidden private fields, rejected selectors and rejected writes. A recorded sample is not live processing, and its source checksums are provenance references rather than checksums of the public display projection.
 
 ## Checks and live runner verification
 
@@ -227,13 +227,13 @@ For the bounded Qloo → Nova → runner check, see [live discovery verification
 - Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
-- The real-provider browser journey passed, but hosted session recovery, auth-email completion, live cancellation/restart, objective-rule browser failures and a genuine public sample remain unverified. No deployed backend or measured advantage over generic generation exists yet.
+- The hosted real-provider browser journey passed, and the recorded public sample passed API/proxy checks. Auth-email completion, deliberate cold-start recovery, live hosted cancellation/restart, objective-rule browser failures and replay of the newly downloaded hosted pack remain untested. A measured advantage over generic generation is not established.
 
 ## Roadmap
 
-- Deploy the API and verify its hosted operational and session-recovery paths.
-- Verify hosted browser behavior and Supabase signup/recovery callbacks.
-- Hosted sample, judge access and a measured case-yield comparison.
+- Verify deliberate hosted cold-start recovery, cancellation and objective-rule failures.
+- Verify Supabase signup/recovery email links and replay the newly downloaded hosted pack.
+- Measure whether Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## License
 
