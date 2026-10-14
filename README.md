@@ -6,11 +6,11 @@ TasteCase is for the engineering and QA team, not the traveler. It tests recomme
 
 Live demo: not available · Video: not available · Docs: [discovery](docs/discovery.md), [review/suites](docs/review.md) and [comparison/replay](docs/comparison.md) · Submission: not submitted
 
-The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. Local integration checks pass; browser verification and hosting are still pending. No product screenshots of real results exist yet.
+The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed; hosting is still pending. Recorded evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
 
 Built with: Qloo official MCP · NVIDIA Nemotron 3 Super (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
-**Status: private web app, backend and runner. Web/API wiring checked locally; earlier backend checks used live providers and hosted Supabase. No deployed app or provisioned public sample.**
+**Status: private web app, backend and runner. Real-provider browser journey and replay verified against hosted Supabase. No deployed app or provisioned public sample.**
 
 ## The problem
 
@@ -20,7 +20,7 @@ A prompt or model change can alter a concierge's restaurant choices while its an
 
 The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nemotron selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
 
-Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally. **The web app is wired, but the complete browser journey and hosting are not verified.**
+Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally. **The wired browser journey is verified; hosting is not.**
 
 ## How it works
 
@@ -60,7 +60,7 @@ There is no hosted judge path yet. Run the local checks below and inspect the [d
 
 ## Product / demo
 
-The product has a web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. No live screenshot, demo video or publicly accessible sample exists yet.
+The product has a web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. Real browser evidence now exists; no publicly accessible app or sample has been provisioned.
 
 ## Architecture
 
@@ -81,9 +81,9 @@ flowchart TB
 | Tool | Role | Current state |
 |---|---|---|
 | Qloo official MCP | Resolve public anchors and rank the fixed eligible options | Integrated worker, live full/reduced rankings and missing-coverage handling verified |
-| OpenRouter / NVIDIA Nemotron 3 Super (free) | Choose a code-verified contrast; default local runner target | Free-only routing with no paid fallback; small live JSON-compatibility checks passed. Full Nemotron journey verification pending |
+| OpenRouter / NVIDIA Nemotron 3 Super (free) | Choose a code-verified contrast; default local runner target | Browser journey and replay verified: 11 model calls reporting $0; no retry or paid fallback |
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
-| Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; browser journey unverified |
+| Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; real-provider browser journey verified |
 | Fastify / Node | One API/worker process with a Postgres-backed queue | Local startup, readiness, cancellation and restart tests pass |
 | Vercel / Render | Planned web and persistent backend hosting | Not deployed |
 
@@ -93,7 +93,11 @@ A dedicated Supabase project holds the private database and Auth/Storage configu
 
 ## Evidence
 
-Verified on 2026-10-13:
+Current Nemotron verification (2026-10-14): **667 tests**, lint, types, production build and CI pass; dependency audit is clean. The real browser completed discovery, advisory review, exact suite publication, four comparison executions, frozen report/pack downloads and reopening. The browser-downloaded pack replayed through both distinct local prompt bindings on the same model. Total: **11 model requests reporting $0, four Qloo calls, zero retries or paid fallback**.
+
+Missing Qloo coverage and partial traces stayed visible. Recommendation ordering was unchanged; all selected outcomes stayed advisory, not automatic correctness passes or proof of better case yield. No public sample or deployment was created.
+
+Earlier verification on 2026-10-13 (Nova evidence is historical):
 
 - `npm run check`: lint, strict types, builds and **473 passing tests**, including a fresh PostgreSQL 17 CI-mode run; zero skipped.
 - Frontend wiring follow-up: **658 passing tests**, lint, strict types and production build. Six cross-layer tests exercise the real loopback API, proxy, transport and PostgreSQL; provider evidence in those tests is explicitly simulated, not a public sample. Production checks exclude dev fixtures and inspect browser import/secret boundaries.
@@ -216,15 +220,15 @@ For the bounded Qloo → Nova → runner check, see [live discovery verification
 
 - The four Qloo/Pi audit findings were resolved on 2026-10-13 with scoped dependency pins and the committed lockfile. `npm audit` reports **zero vulnerabilities**; clean installation, live official MCP calls and all 329 tests passed. Keep the lockfile: upstream Pi still pins the old versions. See [dependency verification](docs/discovery.md#dependency-security).
 - The ranking workflow accepts at most ten mapped options. Larger inputs are explicitly unsupported, not silently split into incomparable scores.
-- Nova's prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
+- Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
-- The web app is wired and tested locally, but hosted/browser session recovery, a genuine public sample and the full interactive journey remain unverified. No deployed backend or measured advantage over generic generation exists yet.
+- The real-provider browser journey passed, but hosted session recovery, auth-email completion, live cancellation/restart, objective-rule browser failures and a genuine public sample remain unverified. No deployed backend or measured advantage over generic generation exists yet.
 
 ## Roadmap
 
 - Deploy the API and verify its hosted operational and session-recovery paths.
-- Verify the wired browser journey and Supabase signup/recovery callbacks.
+- Verify hosted browser behavior and Supabase signup/recovery callbacks.
 - Hosted sample, judge access and a measured case-yield comparison.
 
 ## License
