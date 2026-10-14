@@ -4,74 +4,85 @@ import type { DocSection } from './types';
 
 export const start: DocSection = {
   introduction: {
-    headings: [{ id: 'what', label: 'What TasteCase does' }, { id: 'who', label: 'Who it’s for' }, { id: 'qloo', label: 'Qloo’s contribution' }, { id: 'not', label: 'What it doesn’t claim' }, { id: 'status', label: 'Current status' }],
-    keywords: ['overview', 'about', 'product'],
+    headings: [{ id: 'what', label: 'What TasteCase does' }, { id: 'who', label: 'Who it’s for' }, { id: 'qloo', label: 'Where Qloo helps' }, { id: 'not', label: 'What it can’t tell you' }],
+    keywords: ['overview', 'about', 'product', 'getting started', 'what is tastecase', 'same model'],
     Body: () => (
       <>
-        <p>TasteCase helps teams building AI travel concierges find difficult dining recommendation cases and keep the reviewed ones as tests they can replay before every release.</p>
+        <p>TasteCase helps teams test an AI assistant that recommends restaurants. It finds cases worth checking, lets you decide what a good answer should do, and saves those checks for the next time you change your assistant.</p>
+        <p><strong>Connect your assistant → find a case → review it → save a test → compare versions.</strong></p>
         <H2 id="what">What TasteCase does</H2>
-        <p>You connect your assistant through a local runner and import your own restaurant catalog. TasteCase describes two fictional diners through public cultural interests, uses Qloo to rank your eligible restaurants for each, and looks for pairs whose order reverses. Your runner then asks your assistant both briefs, under identical practical constraints, and repeats them.</p>
-        <p>A person reviews the saved case and decides whether it belongs in a test. Approved cases are published as an immutable suite. Two named releases of your assistant can then run against that suite, and the pinned test pack can be replayed locally.</p>
+        <p>Imagine two fictional diners visiting the same city. They have the same practical needs, but different interests: one listens to Radiohead, the other to Taylor Swift. Should your assistant give them the same restaurant suggestions? Maybe. TasteCase helps you inspect that question rather than guessing the answer.</p>
+        <p>You supply a list of restaurants and the dinner request. TasteCase asks your assistant about both diners and saves the answers beside Qloo’s rankings. You review what happened and decide whether to keep the case as a test.</p>
+        <p>Later, compare your current assistant with a changed version using those same saved tests. The two versions can use the same model with different prompts. You do not need two different models.</p>
         <H2 id="who">Who it’s for</H2>
-        <p>Engineering and QA leads shipping an AI concierge who need to know, before a model, prompt, memory or ranking change goes out, which recommendation cases changed — and whether the change matters. It tests the team’s assistant, not travellers.</p>
-        <H2 id="qloo">Qloo’s contribution</H2>
-        <p>Qloo supplies public, aggregate cultural relationships. TasteCase uses them to rank the same eligible restaurants for each profile and to choose contrasts worth investigating, instead of asking a language model to invent one. See <Link href="/docs/architecture/cultural-evidence">Cultural evidence</Link>.</p>
-        <H2 id="not">What it doesn’t claim</H2>
+        <p>Developers and testers building AI travel or dining concierges. TasteCase tests their assistant; it is not a restaurant-booking service for travellers.</p>
+        <H2 id="qloo">Where Qloo helps</H2>
+        <p>Qloo connects public cultural interests, such as music and films, with places. It helps TasteCase find restaurant pairs worth investigating. It does not decide what a particular person should like.</p>
+        <p>Start with <Link href="/sample">Inspect a case</Link>. No account or model key is needed to read the saved example.</p>
+        <H2 id="not">What it can’t tell you</H2>
         <ul>
-          <li>Qloo doesn’t know whether a particular person will like a restaurant. A changed ranking is a signal to investigate, never an automatic failure.</li>
-          <li>Missing cultural coverage is unavailable — not a negative preference.</li>
-          <li>An incomplete trace can’t prove an assistant skipped a tool.</li>
-          <li>A better useful-case yield than generic test generation has not been demonstrated yet.</li>
+          <li>A different ranking is not proof that your assistant is wrong.</li>
+          <li>If Qloo has no evidence for a restaurant, that does not mean the diner dislikes it.</li>
+          <li>An incomplete activity record cannot prove your assistant skipped a tool.</li>
+          <li>We have not yet measured whether this finds more useful cases than ordinary test generation.</li>
         </ul>
-        <H2 id="status">Current status</H2>
-        <Callout kind="implemented">The backend API, discovery worker, review and immutable suites, comparisons, exports and the local runner are implemented and were verified on 2026-10-13. See <Link href="/docs/proof/verified-evidence">Verified integration evidence</Link>.</Callout>
-        <Callout kind="implemented">The web app uses the production API connection through a bounded same-origin proxy. Private requests require a verified Supabase session. Local integration checks cover stored receipts; they do not prove a deployed app or browser workflow.</Callout>
-        <Callout kind="limitation">Hosted API and Supabase configuration, and a dedicated recorded public sample, still need provisioning and verification. Missing configuration shows “not connected” or unavailable, never stand-in results.</Callout>
       </>
     ),
   },
   'sample-walkthrough': {
-    headings: [{ id: 'order', label: 'Read it in order' }, { id: 'constraints', label: 'Shared constraints' }, { id: 'finding', label: 'Finding and evidence limits' }, { id: 'sections', label: 'Briefs, outputs and rankings' }, { id: 'interactions', label: 'Highlighting and inspecting' }, { id: 'sample-status', label: 'Sample availability' }],
-    keywords: ['public sample', 'inspect a case', 'case anatomy', 'profile a', 'profile b'],
+    headings: [{ id: 'order', label: 'The question this case asks' }, { id: 'constraints', label: 'What stays the same' }, { id: 'finding', label: 'What happened — and what it means' }, { id: 'sections', label: 'Read the answers and rankings' }, { id: 'interactions', label: 'Look closer' }, { id: 'sample-status', label: 'A saved example, not a live run' }],
+    keywords: ['public sample', 'inspect a case', 'case anatomy', 'profile a', 'profile b', 'Radiohead', 'Taylor Swift'],
     Body: () => (
       <>
-        <p>The public sample shows one case exactly as your team would see it in a private project, with synthetic inputs clearly labelled.</p>
-        <H2 id="order">Read it in order</H2>
-        <p>The case answers four questions without opening raw traces: what are we testing, what happened, what is uncertain, and what can I do next. Read from the top: constraints, the finding with its limits, then each profile’s brief, the assistant’s outputs and Qloo’s rankings.</p>
-        <H2 id="constraints">Shared constraints</H2>
-        <p>One strip lists the practical constraints that stay identical for both profiles and every repeat: party size, location, budget, dietary and accessibility needs, required cuisines, eligible and excluded restaurants. Only the cultural interests differ between Profile A and Profile B.</p>
-        <H2 id="finding">Finding and evidence limits</H2>
-        <p>The finding states the contrast — Qloo ordered two eligible restaurants one way for Profile A and the reverse for Profile B — and carries an <strong>Advisory · Needs human review</strong> label. Beside it, before any review control, you always see ranking coverage, missing or unranked candidates, and trace completeness.</p>
-        <H2 id="sections">Briefs, outputs and rankings</H2>
-        <p>Each section shows Profile A and Profile B side by side on wide screens, and A then B on narrow ones, with the profile label repeated every time. A case with a single brief shows one “Case brief” column — never an empty or invented Profile B.</p>
-        <p>The attempt switcher moves between stored repeats and the two-restaurant follow-up. Browsing stored attempts never sends a new request; an intended attempt that wasn’t captured is shown as not captured.</p>
-        <H2 id="interactions">Highlighting and inspecting</H2>
+        <p><Link href="/sample">Open the public example</Link> without signing in. The diners are fictional; the Qloo rankings and assistant answers came from a real run.</p>
+        <H2 id="order">The question this case asks</H2>
+        <p>Two diners want dinner in New York. Profile A likes Radiohead; Profile B likes Taylor Swift. Does that difference give us a useful test for a restaurant assistant?</p>
+        <H2 id="constraints">What stays the same</H2>
+        <p>Both requests are for two people in New York, choosing from the same three restaurants: Le Bernardin, Gramercy Tavern and Via Carota. No prices, dietary options, accessibility or availability were verified for this example.</p>
+        <H2 id="finding">What happened — and what it means</H2>
+        <p>Qloo put Gramercy Tavern ahead of Via Carota for Profile A, and reversed that order for Profile B. The assistant suggested Le Bernardin and Gramercy Tavern for both diners.</p>
+        <p>That is a question worth reviewing, not an automatic failure. Giving both diners the same answer may be reasonable. The saved reviewer decision keeps the finding <strong>advisory</strong>: useful to inspect, but not a rule that fails a release.</p>
+        <Callout kind="limitation">Qloo did not return Le Bernardin in these rankings. That is a gap in the evidence, not a negative opinion of the restaurant. The assistant’s activity record is also partial, so it cannot tell us everything the assistant did.</Callout>
+        <p>The page calls that activity record a <strong>trace</strong>. “Partial” means it recorded only some of the assistant’s activity.</p>
+        <H2 id="sections">Read the answers and rankings</H2>
+        <ol>
+          <li>Read the shared practical needs at the top.</li>
+          <li>Check the finding and the evidence gaps.</li>
+          <li>Compare each diner’s request with the assistant’s answer.</li>
+          <li>Look at Qloo’s order for each diner. Compare order, not scores from separate requests.</li>
+        </ol>
+        <p>Profile A and Profile B always mean the two diners. They are not two assistant versions. This example captured one answer for each diner; it does not prove the assistant behaves the same way on every run.</p>
+        <H2 id="interactions">Look closer</H2>
         <ul>
-          <li><strong>Select a restaurant</strong> to highlight the same catalog ID across rankings and outputs. Where it’s absent, the panel says so.</li>
-          <li><strong>Hover or focus “Inspect”</strong> for a short preview; activate it (or tap on touch screens) to pin the full evidence record in the inspector.</li>
+          <li>Select a restaurant to follow it across the answer and ranking panels.</li>
+          <li>Use <strong>Inspect</strong> to open the saved evidence. On a phone, tap it.</li>
+          <li>In cases with repeated runs, the attempt selector lets you browse saved answers. It never sends a new model request.</li>
         </ul>
-        <H2 id="sample-status">Sample availability</H2>
-        <Callout kind="implemented">The anonymous, read-only sample endpoint is implemented. It exposes only one server-selected recorded case with explicitly approved synthetic inputs, captured ranking evidence and an assistant result. It does not accept project or case selectors, use your owner session, or start new provider calls.</Callout>
-        <Callout kind="limitation">A genuine dedicated sample has not been provisioned or verified through this web app. If its configuration or required evidence is missing, <Link href="/sample">Inspect a case</Link> shows unavailable and no stand-in results. Local tests use explicitly simulated provider evidence, not a publishable demonstration.</Callout>
+        <H2 id="sample-status">A saved example, not a live run</H2>
+        <Callout kind="recorded">The capture time tells you when this evidence was saved. The sample is read-only: visitors cannot change it, browse private projects or start provider calls. If the saved example cannot be loaded, the page says so rather than inventing results.</Callout>
+        <p>To run your own cases, choose <strong>Bring your assistant</strong> and follow <Link href="/docs/using/projects">the project setup guide</Link>.</p>
       </>
     ),
   },
   'from-taste-to-test': {
-    headings: [{ id: 'loop', label: 'The loop' }, { id: 'investigate', label: '1. Investigate' }, { id: 'review', label: '2. Review' }, { id: 'replay', label: '3. Replay' }, { id: 'classes', label: 'Why classes matter' }],
-    keywords: ['workflow', 'how it works', 'loop', 'release'],
+    headings: [{ id: 'loop', label: 'The simple version' }, { id: 'investigate', label: '1. Find a case' }, { id: 'review', label: '2. Decide what to keep' }, { id: 'replay', label: '3. Test the next version' }, { id: 'classes', label: 'Understand the result labels' }],
+    keywords: ['workflow', 'how it works', 'loop', 'release', 'suite', 'baseline', 'candidate'],
     Body: () => (
       <>
-        <p>A cultural contrast is only a lead. It becomes a test when a person decides what the assistant should do and writes that down as a scoped expectation.</p>
-        <H2 id="loop">The loop</H2>
-        <p>Connect your assistant, define the task, discover a case, inspect the evidence, approve an expectation, publish a suite, compare two releases, export the pack and replay it — then come back to the same saved project later.</p>
-        <H2 id="investigate">1. Investigate</H2>
-        <p>A discovery job pins your catalog, task, confirmed mappings and two fictional profiles built from public music, film or brand interests. Qloo ranks the same eligible, mapped restaurants for each profile. Code finds pairs whose order reverses; a model may only pick one of those observed contrasts, or none. Your runner then asks your assistant both full briefs, repeats them, and optionally asks a focused follow-up about the two restaurants — with constraints and the eligible catalog unchanged.</p>
-        <H2 id="review">2. Review</H2>
-        <p>You accept, edit, reject or defer the saved case, always with a rationale. Accepting keeps the finding advisory. Editing lets you write an <strong>approved policy</strong> (recommend any of, avoid, or order two restaurants for one profile) or <strong>objective checks</strong> (output shape, only eligible restaurants, never excluded ones). Each decision is an immutable receipt with its pinned evidence.</p>
-        <H2 id="replay">3. Replay</H2>
-        <p>Publishing creates an immutable suite version. A comparison runs a named baseline and candidate release against it with fresh runs, evaluates only the approved rules and freezes a report. The test pack replays locally without new Qloo calls.</p>
-        <H2 id="classes">Why classes matter</H2>
-        <p>Every result shows two labels: what kind of check it is, and what happened. Advisory findings never turn into failures because a ranking changed, and missing evidence never counts as a pass. See <Link href="/docs/reference/result-classes">Result classes</Link>.</p>
+        <p>A case becomes a test when you decide what the assistant should do and save that expectation.</p>
+        <H2 id="loop">The simple version</H2>
+        <p>Connect your assistant, find an interesting case, review the answers, save the useful tests, then use them to compare your next version.</p>
+        <H2 id="investigate">1. Find a case</H2>
+        <p>You supply the restaurant list and practical needs. TasteCase uses public interests for two fictional diners. Qloo helps find a pair of restaurants that changes order between those diners, and your local runner asks your assistant about both.</p>
+        <p>A runner is the small program that connects TasteCase to your assistant. Your model-provider key stays on the machine running it.</p>
+        <H2 id="review">2. Decide what to keep</H2>
+        <p>Read the answers and the evidence gaps. Accept the finding as something to keep reviewing, edit it into a specific check, reject it, or leave it for later. Write a short reason for your decision.</p>
+        <p>For example, “only recommend restaurants from our list” is a check TasteCase can evaluate. “This music fan should enjoy this restaurant” is not a fact TasteCase can prove. Approving an interesting case is not the same as passing a test.</p>
+        <H2 id="replay">3. Test the next version</H2>
+        <p>Publish your approved cases as a <strong>suite</strong> — a named test collection with a saved version. Compare <strong>Baseline</strong> (your current assistant) with <strong>Candidate</strong> (the version you want to try). Both answer the same saved requests.</p>
+        <p>You can download a test pack and rerun it on your own machine. That uses the saved inputs without asking Qloo for fresh rankings.</p>
+        <H2 id="classes">Understand the result labels</H2>
+        <p><strong>Passed</strong> and <strong>Failed</strong> apply to checks the system can evaluate. <strong>Advisory</strong> asks for your judgement. <strong>Unavailable</strong> means there is not enough evidence or a run did not finish — it never means passed. See <Link href="/docs/reference/result-classes">what each label means</Link>.</p>
       </>
     ),
   },

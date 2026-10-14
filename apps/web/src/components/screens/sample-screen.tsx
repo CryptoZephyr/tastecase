@@ -28,7 +28,7 @@ export function SampleScreen() {
       <SiteHeader />
       <aside aria-label="About this sample" className="border-y border-info/20 bg-info-bg">
         <p className="mx-auto flex w-full max-w-[1200px] items-center gap-2 px-4 py-2 text-control font-medium text-info sm:px-6">
-          <FlaskConical aria-hidden className="size-4" strokeWidth={1.75} /> Public sample · synthetic inputs · not a private project
+          <FlaskConical aria-hidden className="size-4" strokeWidth={1.75} /> Public sample · fictional diners · real recorded results · read-only
         </p>
       </aside>
       <main id="main" className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
@@ -37,9 +37,9 @@ export function SampleScreen() {
           <div className="grid gap-10 lg:grid-cols-[3fr_2fr]">
             <div className="space-y-5">
               <h1 className="text-title font-medium">Inspect a case</h1>
-              <p className="max-w-[60ch] text-ink">The sample runs one recommendation case end to end: two fictional profiles, the same constraints and catalog, Qloo rankings, the assistant’s answers and the evidence limits — the same view your team uses to decide what becomes a test.</p>
+              <p className="max-w-[60ch] text-ink">Read a saved restaurant test: two fictional diners, the same practical needs, Qloo’s rankings and the assistant’s answers. See what changed and what the evidence can’t tell us.</p>
               <ErrorState error={sample.error} what="the public sample" onRetry={sample.reload} retrying={sample.reloading} />
-              <p className="text-control text-ink-2">No recorded results are shown in its place. When the sample can run, it uses synthetic inputs, and any recorded evidence is labelled with when it was captured.</p>
+              <p className="text-control text-ink-2">We couldn’t load the saved example. No made-up results are shown instead. If the free service is waking up, wait about a minute and retry.</p>
             </div>
             <aside className="space-y-3 rounded-panel border border-rule bg-surface p-5">
               <p className="font-medium">While the sample is unavailable</p>
@@ -59,15 +59,16 @@ export function SampleScreen() {
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="info">Recorded evidence</Badge>
-                  <span className="text-control text-ink-2">Captured <Time iso={sample.data.capturedAt} /> · synthetic inputs</span>
+                  <span className="text-control text-ink-2">Captured <Time iso={sample.data.capturedAt} /> · fictional diners</span>
                 </div>
                 <h1 className="text-title font-medium">Inspect a case</h1>
-                <p className="max-w-[64ch] text-ink-2">Read it top to bottom: constraints, the finding and its evidence limits, then each profile’s brief, the assistant’s answers and Qloo’s rankings. Select any restaurant to follow it across panels.</p>
+                <p className="max-w-[64ch] text-ink-2">Two fictional diners want dinner in the same city, but have different interests. Qloo helps us find a restaurant pair worth checking. Read the assistant’s answers beside those rankings — a difference is a question to review, not an automatic failure.</p>
+                <p className="max-w-[64ch] text-control text-ink-2">This is a saved example, not a new run. Select a restaurant to follow it across panels, or <Link href="/docs/start/sample-walkthrough" className="text-action underline underline-offset-4">read the short walkthrough</Link>.</p>
               </div>
             } decision={
               <section id="decision" className="scroll-mt-24 rounded-panel border border-rule bg-surface p-5">
                 <h2 className="text-section font-medium">Review your own cases</h2>
-                <p className="mt-2 max-w-[60ch] text-ink">In a private project you’d accept, edit, reject or defer this finding with a rationale, then publish approved cases as a release suite.</p>
+                <p className="mt-2 max-w-[60ch] text-ink">In your own project, decide whether to keep a case and write down why. Save the useful ones as tests, then compare your next assistant version against them.</p>
                 <ButtonLink href={routes.newProject} className="mt-4">Bring your assistant</ButtonLink>
               </section>
             } />

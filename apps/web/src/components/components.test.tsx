@@ -42,7 +42,8 @@ describe('public sample', () => {
   it('shows the actual unavailable state with no stand-in results', async () => {
     render(<ApiProvider api={fixtureApi({ scenario: 'not_connected' })}><SampleScreen /></ApiProvider>);
     expect(await screen.findByText('TasteCase isn’t connected to its service yet')).toBeTruthy();
-    expect(screen.getByText(/Public sample · synthetic inputs/)).toBeTruthy();
+    expect(screen.getByText(/Public sample · fictional diners · real recorded results · read-only/)).toBeTruthy();
+    expect(screen.getByText(/No made-up results are shown instead/)).toBeTruthy();
     expect(screen.queryByText(/Fixture/)).toBeNull();
   });
 });
