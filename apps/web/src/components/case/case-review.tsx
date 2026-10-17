@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Segmented } from '@/components/ui/choice';
 import { Sheet } from '@/components/ui/dialog';
 import { Time } from '@/components/ui/data';
@@ -25,19 +25,31 @@ export function CaseReview({ view, header, decision, history }: { view: CaseView
   const [selected, setSelected] = useState<string | null>(null);
   const [pinned, setPinned] = useState<PinnedItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const pinTrigger = useRef<HTMLElement | null>(null);
   const { slots, missing } = useMemo(() => attemptOptions(view), [view]);
   const [slotKey, setSlotKey] = useState<string | null>(slots[0]?.key ?? null);
   const slot = slots.find(row => row.key === slotKey) ?? slots[0];
   const [x, y] = view.contrast.entryIds;
 
   const pin = (item: PinnedItem) => {
+    pinTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setPinned(item);
     if (!window.matchMedia('(min-width: 75rem)').matches) setSheetOpen(true);
+  };
+  const closeInspector = () => {
+    setPinned(null);
+    if (pinTrigger.current?.isConnected) pinTrigger.current.focus();
   };
 
   return (
     <LinkProvider value={{ selected, select: setSelected, pin, view }}>
-      <div className={cn('grid gap-8', pinned && 'xl:grid-cols-[minmax(0,1fr)_22rem]')}>
+      <div className={cn('grid gap-8', pinned && 'xl:grid-cols-[minmax(0,1fr)_22rem]')} onKeyDown={event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || !pinned || sheetOpen) return;
+        if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeInspector();
+      }}>
         <div className="min-w-0 space-y-8">
           {header ?? (
             <div>
@@ -90,7 +102,7 @@ export function CaseReview({ view, header, decision, history }: { view: CaseView
           {decision}
           {history}
         </div>
-        {pinned ? <div className="hidden xl:block"><InspectorPanel item={pinned} view={view} onClose={() => setPinned(null)} /></div> : null}
+        {pinned ? <div className="hidden xl:block"><InspectorPanel item={pinned} view={view} onClose={closeInspector} /></div> : null}
       </div>
       <Sheet isOpen={sheetOpen && Boolean(pinned)} onOpenChange={open => { setSheetOpen(open); if (!open) setPinned(null); }} title="Pinned evidence">
         {pinned ? <InspectorContent item={pinned} view={view} /> : null}
@@ -98,4 +110,3 @@ export function CaseReview({ view, header, decision, history }: { view: CaseView
     </LinkProvider>
   );
 }
-
