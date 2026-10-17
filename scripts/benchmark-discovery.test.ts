@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { eligiblePairs, parseGenericSelection, reusedRanking, shuffleCards, reviewPacket, verifiedRecording, trialDefinitions, budgets } from './benchmark-discovery.js';
+import { eligiblePairs, parseGenericSelection, reusedRanking, shuffleCards, reviewPacket, serializePilotArtifact, verifiedRecording, trialDefinitions, budgets } from './benchmark-discovery.js';
 import { RankingEvidenceSchema } from '@tastecase/contracts';
 
 test('the pilot pins one calibration and two new combinations with hard ceilings', () => {
@@ -57,14 +57,76 @@ test('review cards preserve the correct trial and hide arm identity, while sourc
     [{ name: 'Music A' }, { name: 'Music B' }, { name: 'Film C' }],
     trialDefinitions.map((_, trial) => ({ rankings: [{ providerStatus: 'ok', orderedEntryIds: [`trial-${trial}`], missingEntryIds: [] }], supportedReversals: [] })),
     [{ profile: 'Music A' }, { profile: 'Music B' }, { profile: 'Film C' }]);
-  assert.equal(packet.cards.length, 6);
+  assert.equal(packet.cards.length, 3);
+  assert.equal(packet.sourceByCard.length, 6);
   assert.ok(!JSON.stringify(packet.cards).includes('guided'));
   assert.ok(!JSON.stringify(packet.cards).includes('generic'));
   assert.ok(!JSON.stringify(packet.cards).includes('private-run'));
   for (const source of packet.sourceByCard) {
     const card = packet.cards.find(c => c.card === source.card)!;
-    assert.equal(card.evidence.rankings[0]!.orderedEntryIds[0], `trial-${source.trial - 1}`);
+    const evidence = packet.evidenceByCard.find(value => value.card === source.card)!;
+    assert.equal(evidence.rankings[0]!.orderedEntryIds[0], `trial-${source.trial - 1}`);
     assert.deepEqual(card.profiles, trialDefinitions[source.trial - 1]!.anchors.map(a => ['Music A', 'Music B', 'Film C'][a]));
     assert.equal(card.targetOutputs.length, 2);
+  }
+});
+
+test('shared reversed pairs get one card per trial with both private attributions', () => {
+  const packet = reviewPacket([
+    { trial: 0, method: 'guided', pair: ['a', 'b'] },
+    { trial: 0, method: 'generic', pair: ['b', 'a'] },
+    { trial: 1, method: 'guided', pair: ['a', 'b'] },
+    { trial: 1, method: 'generic', pair: null },
+  ], 'private-run', [{ id: 'a', name: 'Fixture A' }, { id: 'b', name: 'Fixture B' }],
+  [{ name: 'Music A' }, { name: 'Music B' }, { name: 'Film C' }],
+  trialDefinitions.map(() => ({ rankings: [], supportedReversals: [] })), []);
+  assert.equal(packet.cards.length, 2);
+  const shared = packet.sourceByCard.filter(value => value.trial === 1);
+  assert.equal(new Set(shared.map(value => value.card)).size, 1);
+  assert.deepEqual(shared.map(value => value.method).sort(), ['generic', 'guided']);
+  assert.ok(packet.cards.every(card => JSON.stringify(card.pair) === '["a","b"]'));
+});
+
+test('initial usefulness cards omit selection clues but retain coverage and shared outputs', () => {
+  const packet = reviewPacket([
+    { trial: 0, method: 'guided', pair: ['a', 'b'] },
+    { trial: 0, method: 'generic', pair: ['c', 'd'] },
+  ], 'private-run', ['a', 'b', 'c', 'd'].map(id => ({ id, name: `Fixture ${id}` })),
+  [{ name: 'Music A' }, { name: 'Music B' }, { name: 'Film C' }],
+  [{ rankings: [{ providerStatus: 'partial', orderedEntryIds: ['d', 'a', 'b'], missingEntryIds: ['c'] }], supportedReversals: [['a', 'b']] }],
+  [{ profile: 'Music A', attempts: ['Fixture output A'] }, { profile: 'Music B', attempts: ['Fixture output B'] }]);
+  assert.equal(packet.cards.length, 2);
+  for (const card of packet.cards) {
+    assert.deepEqual(card.coverage, [{ providerStatus: 'partial', rankedOptions: 3, missingOptions: 1 }]);
+    assert.equal(card.targetOutputs.length, 2);
+    for (const clue of ['supportedReversals', 'orderedEntryIds', 'missingEntryIds', 'method', 'guided', 'generic', 'private-run']) {
+      assert.ok(!JSON.stringify(card).includes(clue));
+    }
+  }
+  assert.deepEqual(packet.evidenceByCard.map(value => value.supportedReversals), [[['a', 'b']], [['a', 'b']]]);
+});
+
+test('pilot serialization rejects known credentials anywhere, including escaped strings and object keys', () => {
+  const secret = 'fixture-private-"qloo"-credential';
+  for (const value of [
+    { targets: [{ name: secret, reason: 'Fixture' }] },
+    { reason: `Fixture ${secret}` },
+    { reason: JSON.stringify(secret).slice(1, -1) },
+    { [secret]: 'Fixture' },
+    { [JSON.stringify(secret).slice(1, -1)]: 'Fixture' },
+    { error: secret },
+  ]) {
+    assert.throws(() => serializePilotArtifact(value, [secret]), error => {
+      assert.ok(error instanceof Error);
+      assert.ok(!error.message.includes(secret));
+      return true;
+    });
+  }
+  assert.equal(JSON.parse(serializePilotArtifact({ reason: 'Fixture safe answer' }, [secret])).reason, 'Fixture safe answer');
+});
+
+test('pilot serialization rejects credential-shaped authorization without knowing its value', () => {
+  for (const value of [{ reason: 'Bearer fixture-private-value' }, { error: `tc_runner_${'X'.repeat(43)}` }]) {
+    assert.throws(() => serializePilotArtifact(value, []));
   }
 });
