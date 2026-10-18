@@ -24,6 +24,20 @@ The official harness is pinned to `@qloo/qloo-harness@0.1.26` with `@modelcontex
 
 The Qloo child has a minimal environment: Qloo credentials and runtime paths, not database, model or runner keys. Raw Qloo replies and stderr are not persisted. Stored evidence contains bounded, normalised, task-relevant resolution choices and relative catalog ordering. Missing/unmapped coverage stays unavailable, not disliked. More than ten mapped eligible options is explicitly unsupported, not truncated or batched. Public-anchor labels must be genuinely public entities; the owner supplies that provenance, not a semantic PII detector.
 
+### Bounded Qloo HTTP transport
+
+The worker starts the pinned harness's canonical MCP server and official `qloo_describe`/`qloo_rank` tools through its public factories. A TasteCase HTTP client supplies the exact hackathon host, GET/query encoding and `X-Api-Key` header. The official resolver, tool schemas, ranking query and output validation remain in use. No installed dependency is patched. Build the worker before source-mode development so the compiled MCP child is available.
+
+Each workflow permits at most two underlying HTTP dispatches, with no internal retries or followed redirects. A cold ID-based ranking coalesces up to ten options and five anchors into one documented `/entities?entity_ids=…` batch, then one `/v2/insights` request. This batches identity lookup only, not separate ranking queries or scores. Named description uses `/search` and optional entity hydration. The first failed request stops the workflow. HTTP 429 is never automatically retried. Other upstream errors carrying any `Retry-After` header also stop instead of retrying before the provider's requested wait.
+
+Successful entity details are cached only in the job's child process, for at most 15 minutes, 256 entities and 5 MiB. The official resolver also has a session-memory cache. Neither cache crosses job/process boundaries, and missing IDs/errors are not cached as negative preferences. A restarted worker may need another bounded ID validation batch. Existing confirmed mappings are not silently substituted for a fresh provider result.
+
+New ranking/resolution evidence optionally includes `http`: the two-dispatch ceiling, actual attempt count, entity-cache hits and ordered receipts with allowlisted endpoint paths, numeric HTTP status or null, and a parsed numeric `retryAfterSeconds` or null. No full URLs, query strings, request IDs, arbitrary headers, bodies or provider messages enter that diagnostic field. A null status means the HTTP dispatch had no confirmed response, not that it was free. Older evidence without this optional field stays valid, and its underlying attempt count remains unknown. These counts describe client dispatches, not a provider billing guarantee.
+
+`qlooAttempts` remains the durable workflow budget, rather than an HTTP counter. Together with the fixed two-dispatch ceiling it bounds new HTTP dispatches to at most twice that budget. Explicitly permitted worker-level retries still reserve another charged workflow and never create hidden HTTP retries. A known 429 stops even when the job has a logical retry allowance. This change does not resume any stopped pilot or make live provider calls.
+
+Apply the additive `202610180001_qloo_http_receipts.sql` migration before deploying the new worker. It extends the existing insert validator with the same strict receipt allowlist and preserves historical evidence unchanged. No production migration or deployment is part of this implementation.
+
 `GET /health` only confirms the HTTP process is alive. `GET /ready` checks database/schema availability and the worker loop, **not live Qloo/model health**. Shutdown aborts the worker before HTTP draining, waits for it and then closes the pool. `buildBackend` accepts injected adapters and worker options for tests; the production entrypoint always uses actual Supabase authentication. Test auth is forbidden in production.
 
 ## Durable work and limits

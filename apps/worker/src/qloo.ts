@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   IdSchema, QlooStatusSchema, RankingEvidenceSchema, ResolutionEvidenceSchema,
   NormalizedQlooErrorSchema, PublicAnchorSchema,
+  QlooHttpDiagnosticsSchema,
 } from '@tastecase/contracts';
 import type { PublicAnchor, RankRequest, ProviderContext, QlooAdapter } from './types.js';
 import { UnknownDispatch } from './types.js';
@@ -51,6 +52,7 @@ const envelopeSchema = z.object({
   error: z.strictObject({ code: z.string(), layer: z.string(), retryable: z.boolean(), recovery: z.string() }).optional(),
   execution: z.strictObject({ transport: z.literal('mcp'), transport_name: z.string(), correlation_id: z.string(), duration_ms: z.number().finite().nonnegative() }),
   resolution: z.object({ issues: z.array(z.unknown()).max(10).optional() }).passthrough().optional(),
+  http: QlooHttpDiagnosticsSchema.optional(),
 }).passthrough();
 const rankedEntity = z.object({ entity_id: IdSchema, name: z.string().min(1).max(160), type: z.string().optional() }).passthrough();
 const candidateEntity = z.object({ id: IdSchema, name: z.string().trim().min(1).max(160), type: z.string() }).passthrough();
@@ -90,7 +92,7 @@ export function normalizeRank(value: unknown, request: RankRequest, outputBytes:
     profileId: request.profileId,scope: request.scope,requestedEntryIds: request.options.map(option => option.entryId),orderedEntryIds,
     missingEntryIds: request.options.filter(option => !orderedEntryIds.includes(option.entryId)).map(option => option.entryId),
     unmappedEntryIds: request.unmappedEntryIds,mappingConfirmationIds: request.options.map(option => option.confirmationId),
-    anchorConfirmationIds: request.anchors.map(anchor => anchor.confirmationId),...(error ? {error} : {}),
+    anchorConfirmationIds: request.anchors.map(anchor => anchor.confirmationId),...(error ? {error} : {}),...(envelope.http ? {http:envelope.http} : {}),
   });
 }
 
@@ -113,7 +115,7 @@ export function normalizeResolution(value: unknown, anchor: PublicAnchor, output
     for (const value of envelope.results ?? []) { const entity = rankedEntity.parse(value); append(entity.entity_id,entity.name,entity.type); }
   }
   const error = normalizedError(envelope.error);
-  return ResolutionEvidenceSchema.parse({ kind:'resolve',providerStatus:envelope.status,anchorId:anchor.id,candidates,...(error ? {error} : {}) });
+  return ResolutionEvidenceSchema.parse({ kind:'resolve',providerStatus:envelope.status,anchorId:anchor.id,candidates,...(error ? {error} : {}),...(envelope.http ? {http:envelope.http} : {}) });
 }
 
 export interface McpSession {

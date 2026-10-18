@@ -5,6 +5,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
+import { QlooHttpDiagnosticsSchema } from '@tastecase/contracts';
 import { QLOO_HOST, childEnvironment, type McpSession } from './qloo.js';
 import type { ProviderContext } from './types.js';
 
@@ -16,7 +17,7 @@ export async function openOfficialSession(context: ProviderContext): Promise<Mcp
   const installed = z.object({ version:z.literal('0.1.26') }).parse(JSON.parse(await readFile(join(directory,'../package.json'),'utf8')));
   if (!installed.version) throw new TypeError('Unverified Qloo harness');
   const home = await mkdtemp(join(tmpdir(),'tastecase-mcp-'));
-  const transport = new StdioClientTransport({ command:process.execPath,args:[join(directory,'bin.js'),'mcp'],
+  const transport = new StdioClientTransport({ command:process.execPath,args:[fileURLToPath(new URL('../dist/qloo-mcp.js',import.meta.url))],
     env:childEnvironment(key,home,DEFAULT_INHERITED_ENV_VARS),cwd:home,stderr:'pipe',maxBufferSize:context.outputBytes + 16384,
   });
   transport.stderr?.on('data', () => { /* Discard provider diagnostics; never log raw stderr. */ });
@@ -34,9 +35,10 @@ export async function openOfficialSession(context: ProviderContext): Promise<Mcp
   return {
     listTools: signal => client.listTools(undefined,{signal,timeout:15000}),
     async callTool(name,args,requestContext) {
-      let response: { structuredContent?: unknown; content: { type: string; text?: string | undefined }[] };
+      let response: { structuredContent?: unknown; content: { type: string; text?: string | undefined }[]; _meta?: { tastecaseHttp: unknown } | undefined };
       try {
-        response = z.object({structuredContent:z.unknown().optional(),content:z.array(z.object({type:z.string(),text:z.string().optional()}).passthrough())}).parse(
+        response = z.object({structuredContent:z.unknown().optional(),content:z.array(z.object({type:z.string(),text:z.string().optional()}).passthrough()),
+          _meta:z.object({tastecaseHttp:z.unknown()}).optional()}).parse(
           await client.callTool({name,arguments:args},undefined,{signal:requestContext.signal,timeout:60000}));
       } catch { await close(); throw new Error('MCP dispatch outcome unavailable'); }
       const raw = response.structuredContent ?? (() => {
@@ -46,7 +48,8 @@ export async function openOfficialSession(context: ProviderContext): Promise<Mcp
       })();
       // Reject accidental credential echo before normalisation/persistence.
       if (JSON.stringify(raw).includes(key)) throw new TypeError('Unsafe MCP echo');
-      return raw;
+      const http = QlooHttpDiagnosticsSchema.parse(response._meta?.tastecaseHttp);
+      return { ...z.record(z.string(),z.unknown()).parse(raw), http };
     },
     async close() { context.signal.removeEventListener('abort',abort); await close(); },
   };
