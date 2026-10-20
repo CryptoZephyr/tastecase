@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import { startCanonicalMcpServer, QlooWorkflowExecutionError } from '@qloo/qloo-harness';
 import { QlooHttpDiagnosticsSchema } from '@tastecase/contracts';
-import { BoundedQlooClient, retryAfterSeconds } from './qloo-http.js';
+import { BoundedQlooClient, minimumDispatchGapMs, retryAfterSeconds } from './qloo-http.js';
 import { boundedMcpOptions } from './qloo-mcp.js';
 import { normalizeRank, normalizeResolution, QLOO_HOST, validateTools } from './qloo.js';
 import type { RankRequest } from './types.js';
@@ -169,6 +169,25 @@ test('cancellation stops before dispatch or aborts one in-flight request without
     calls++; return new Promise((_resolve, reject) => { init!.signal!.addEventListener('abort', () => reject(new Error(key)), { once: true }); running.abort(); });
   });
   await assert.rejects(delayed.run('rank', () => delayed.insights({}), running.signal), (error: unknown) => error instanceof QlooWorkflowExecutionError && error.code === 'CANCELLED');
+  assert.equal(calls, 1);
+});
+
+test('dispatches stay at least 250ms apart across workflows; cancelled waits charge no attempt', async () => {
+  let now = 1000; const starts: number[] = []; const waits: number[] = [];
+  const pause = async (ms: number, signal: AbortSignal) => { signal.throwIfAborted(); waits.push(ms); now += ms; };
+  const client = new BoundedQlooClient(key, async () => { starts.push(now); now += 40; return json({ results: {} }); }, () => now, pause);
+  await client.run('rank', async () => { await client.insights({}); await client.insights({}); });
+  await client.run('rank', () => client.insights({}));
+  assert.deepEqual(starts, [1000, 1250, 1500]); assert.deepEqual(waits, [210, 210]);
+  assert.ok(starts.every((start, index) => index === 0 || start - starts[index - 1] >= minimumDispatchGapMs));
+  now += 1000; await client.run('rank', () => client.insights({})); assert.equal(waits.length, 2);
+  const controller = new AbortController(); let calls = 0;
+  const cancelled = new BoundedQlooClient(key, async () => { calls++; return json({ results: {} }); }, () => now,
+    async (_ms, signal) => { controller.abort(); signal.throwIfAborted(); });
+  const first = await cancelled.run('rank', () => cancelled.insights({}));
+  assert.equal(first.http.attempts, 1);
+  await assert.rejects(cancelled.run('rank', () => cancelled.insights({}), controller.signal),
+    (error: unknown) => error instanceof QlooWorkflowExecutionError && error.code === 'CANCELLED');
   assert.equal(calls, 1);
 });
 

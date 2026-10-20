@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { QlooWorkflowExecutionError, type QlooToolClient } from '@qloo/qloo-harness';
 import { IdSchema, type QlooHttpDiagnostics } from '@tastecase/contracts';
 import { z } from 'zod';
@@ -14,6 +15,8 @@ const entityListSchema = z.array(entitySchema).max(15);
 const entitiesSchema = z.object({ results: z.union([entityListSchema, z.object({ entities: entityListSchema }).transform(value => value.entities)]) });
 const maxBodyBytes = 5 * 1024 * 1024;
 const cacheTtlMs = 15 * 60 * 1000;
+/** Qloo support reported a 5 req/s hackathon limit; 250ms keeps one client below it. */
+export const minimumDispatchGapMs = 250;
 
 export function retryAfterSeconds(value: string | null, now: number): number | null {
   if (value === null) return null;
@@ -36,7 +39,9 @@ export class BoundedQlooClient implements QlooToolClient {
   private call: Call | undefined;
   private readonly cache = new Map<string, { entity: Entity; expires: number; bytes: number }>();
   private cacheBytes = 0;
-  constructor(key: string, private readonly request: typeof fetch = fetch, private readonly now = Date.now) {
+  private nextDispatchAt = -Infinity;
+  constructor(key: string, private readonly request: typeof fetch = fetch, private readonly now = Date.now,
+    private readonly pause: (ms: number, signal: AbortSignal) => Promise<unknown> = (ms, signal) => delay(ms, undefined, { signal })) {
     if (!key || /[\s\u0000-\u001f\u007f]/.test(key)) throw new TypeError('Qloo credential required');
     this.#key = key;
   }
@@ -61,6 +66,14 @@ export class BoundedQlooClient implements QlooToolClient {
   private async get(endpoint: Endpoint, query: Query, options: RequestOptions = {}) {
     const call = this.active();
     options.signal?.throwIfAborted();
+    if (call.http.attempts >= call.http.maxAttempts) throw this.failure('QLOO_CONTRACT');
+    // Reserve a slot synchronously so overlapping dispatches stay spaced. Waiting is uncharged.
+    const at = Math.max(this.now(), this.nextDispatchAt); this.nextDispatchAt = at + minimumDispatchGapMs;
+    const wait = at - this.now();
+    if (wait > 0) {
+      try { await this.pause(wait, AbortSignal.any([call.signal, ...(options.signal ? [options.signal] : [])])); }
+      catch { throw this.failure(call.signal.aborted || options.signal?.aborted ? 'CANCELLED' : 'QLOO_TIMEOUT'); }
+    }
     if (call.http.attempts >= call.http.maxAttempts) throw this.failure('QLOO_CONTRACT');
     const url = new URL(endpoint, QLOO_HOST);
     for (const [name, value] of Object.entries(query)) {
