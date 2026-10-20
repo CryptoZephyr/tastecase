@@ -585,7 +585,7 @@ test('default configured adapter pins the free model and ignores legacy provider
     assert.equal(body.model,OPENROUTER_MODEL);
     assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
     assert.deepEqual(body.reasoning,{effort:'low',exclude:true});assert.deepEqual(body.response_format,{type:'json_object'});
-    assert.equal(body.max_tokens,2048);assert.equal(body.temperature,0);
+    assert.equal(body.max_tokens,4096);assert.equal(body.temperature,0);
     for (const secret of [key,token,id(1),id(2),'Ineligible synthetic fact','synthetic-bistro']) assert.equal(String(init?.body).includes(secret),false);
     return completion('{"recommendations":[{"catalogEntryId":"synthetic-cafe","name":"Synthetic Cafe"}]}');
   }});

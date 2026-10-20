@@ -31,7 +31,7 @@ const fixtureCatalog = z.array(z.object({ name: z.string(), qloo_id: z.uuid() })
 const fixtureResolutions = z.array(z.object({
   entity: z.string(), envelope: z.object({ results: z.array(z.object({ entity_id: z.uuid() })) }),
 }));
-const baselineResponse = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).length(1), usage: z.object({ cost: z.number().optional() }).optional() });
+const baselineResponse = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).length(1), usage: z.object({ cost: z.number().optional() }).optional() });
 const selectedPairResponse = z.strictObject({ selectedPairId: z.string().nullable() });
 const recordedRankSchema = z.object({ input: z.strictObject({ options: z.array(z.uuid()), option_type: z.literal('place'), signals: z.array(z.uuid()) }), envelope: z.unknown() });
 
@@ -149,7 +149,7 @@ async function genericSelect(key: string, prompt: unknown, pairIds: readonly str
   const response = await fetch(modelUrl, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60_000),
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: OPENROUTER_MODEL, temperature: 0, max_tokens: 512,
+    body: JSON.stringify({ model: OPENROUTER_MODEL, temperature: 0, max_tokens: 2048,
       provider: { allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0, request: 0 } },
       reasoning: { effort: 'low', exclude: true }, response_format: { type: 'json_object' },
       messages: [
@@ -163,7 +163,9 @@ async function genericSelect(key: string, prompt: unknown, pairIds: readonly str
   if (JSON.stringify(raw).includes(key)) throw new TypeError('Unsafe generic selection');
   const envelope = baselineResponse.parse(raw);
   if (envelope.usage?.cost !== undefined && envelope.usage.cost !== 0) throw new TypeError('Provider reported a nonzero cost');
-  return parseGenericSelection(JSON.parse(envelope.choices[0]!.message.content), pairIds);
+  const content = envelope.choices[0]!.message.content;
+  if (content === null) throw new TypeError('Generic selection returned no content');
+  return parseGenericSelection(JSON.parse(content), pairIds);
 }
 
 function createTarget(base: TargetInput, anchor: { name: string; kind: string }) {
