@@ -8,7 +8,7 @@ Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](
 
 The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed before deployment. The merged build is now hosted on Vercel and free Render. Recorded pre-deployment evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
 
-Built with: Qloo official MCP · NVIDIA Nemotron 3 Super (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
+Built with: Qloo official MCP · MiniMax M3.1 Flash (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
 **Status: hosted web app, private projects, backend, local runner and a read-only [public sample](https://tastecase.vercel.app/sample). The repository stays private.**
 
@@ -28,7 +28,7 @@ Owned projects, immutable inputs, scoped runner access, discovery/recovery, huma
 
 1. The owner creates a project, pins restaurant/task versions and confirms public Qloo mappings.
 2. A bounded discovery job ranks the same eligible options for two explicit synthetic profiles.
-3. Code checks coverage and ranking changes. Nemotron chooses only from those observed contrasts.
+3. Code checks coverage and ranking changes. The free model chooses only from those observed contrasts.
 4. A project-scoped runner calls the owner's locally configured assistant. Its credentials never go to the backend.
 5. Repeats and a smaller Qloo comparison investigate the selected pair without changing practical constraints or the target's eligible catalog.
 6. Immutable evidence and checksums survive restart. A saved taste finding still requires human approval; it is not a failed test.
@@ -73,7 +73,7 @@ flowchart TB
   Web --> Backend["One Node process: API + discovery worker"]
   Backend <--> DB["Postgres: inputs, leases, checkpoints, evidence"]
   Backend --> MCP["Official Qloo MCP child"]
-  Backend --> Model["Free Nemotron: bounded contrast choice"]
+  Backend --> Model["Free MiniMax: bounded contrast choice"]
   Runner["Local project-scoped runner"] <--> Backend
   Runner --> Target["Owner's assistant; credentials stay local"]
 ```
@@ -91,7 +91,7 @@ flowchart TB
 
 ## What's running
 
-A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter. Earlier Nova Micro evidence below is historical, not verification of the new route.
+A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `minimax/minimax-m3.1-flash:free` through OpenRouter. Earlier Nemotron and Nova Micro evidence below is historical, not verification of the new route.
 
 ## Evidence
 
@@ -135,7 +135,7 @@ Proof metadata remains in ignored local storage, not in published provider-respo
 - `apps/api`: owner/runner/discovery/review/suite/comparison routes, single-process backend and migration CLI.
 - `apps/worker`: guarded MCP/model adapters, bounded investigations and recovery.
 - `packages/contracts`: shared validation, pinned inputs and checksums.
-- `packages/runner`: local runtime, CLI, free-only Nemotron adapter and explicit legacy OpenAI-compatible adapter.
+- `packages/runner`: local runtime, CLI, free-only MiniMax adapter and explicit legacy OpenAI-compatible adapter.
 - `supabase`: migrations and database-invariant tests.
 - `scripts`: opt-in live runner/discovery verification.
 

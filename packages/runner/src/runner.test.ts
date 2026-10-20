@@ -575,7 +575,7 @@ test('CLI handshake requires no provider key and outputs metadata only', async (
   assert.equal(lines.join('\n').includes(token) || lines.join('\n').includes(key), false);
 });
 
-test('default configured adapter pins free Nemotron and ignores legacy provider environment', async () => {
+test('default configured adapter pins the free model and ignores legacy provider environment', async () => {
   let calls=0;
   const local=createConfiguredAdapter({env:{...env,OPENROUTER_API_KEY:key,LITELLM_MODEL:'paid-model'},fetch:async(url,init)=>{
     calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');

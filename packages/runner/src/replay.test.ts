@@ -300,13 +300,13 @@ test('CLI tampering before real LiteLLM mock transport and no release-to-model m
   assert.equal(calls, 6); assert.ok(report.comparisonReport.limitations.includes('incomplete_traces'));
 });
 
-test('default OpenRouter replay validates the pack before dispatch and uses free Nemotron for the selected role', async () => {
+test('default OpenRouter replay validates the pack before dispatch and uses the free model for the selected role', async () => {
   const { pack, path } = await packFile();let calls=0;
   const providerEnv={OPENROUTER_API_KEY:'synthetic-openrouter-local-key',TASTECASE_ASSISTANT_VERSION:'release-after'};
   const fetch:typeof globalThis.fetch=async(url,request)=>{
     calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');
     const body=JSON.parse(String(request?.body)) as Record<string,unknown>;
-    assert.equal(body.model,'nvidia/nemotron-3-super-120b-a12b:free');
+    assert.equal(body.model,'minimax/minimax-m3.1-flash:free');
     assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
     return Response.json({choices:[{message:{content:JSON.stringify({recommendations:[{catalogEntryId:'one',name:'Synthetic'}]})}}]});
   };

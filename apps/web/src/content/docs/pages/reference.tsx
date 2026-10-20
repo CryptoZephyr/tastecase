@@ -111,10 +111,10 @@ export const reference: DocSection = {
         <H2 id="runner">Runner</H2>
         <Table label="Runner variables" head={['Variable', 'Purpose']} rows={[
           [<code key="o">TASTECASE_API_ORIGIN</code>, 'HTTPS API origin, with no path, query or credentials.'], [<code key="t">TASTECASE_RUNNER_TOKEN</code>, 'Project-scoped token shown once at creation.'],
-          [<code key="k">OPENROUTER_API_KEY</code>, 'Local provider key for the default free-only Nemotron adapter.'], [<code key="p">TASTECASE_MODEL_PROVIDER</code>, 'Optional: openrouter (default), or explicit litellm. No automatic fallback.'],
+          [<code key="k">OPENROUTER_API_KEY</code>, 'Local provider key for the default free-only MiniMax adapter.'], [<code key="p">TASTECASE_MODEL_PROVIDER</code>, 'Optional: openrouter (default), or explicit litellm. No automatic fallback.'],
           [<code key="v">TASTECASE_ASSISTANT_VERSION</code>, 'Exact release label, required for comparisons and replay.'],
         ]} />
-        <p>The default adapter pins <code>nvidia/nemotron-3-super-120b-a12b:free</code>, enforces zero-price routing and disables paid fallback. Free accounts with fewer than $10 in purchased credits have a shared limit of 50 free-model requests/day and 20/minute. Baseline and Candidate can use the same model, but their labels alone do not change its prompt. Never pass keys or tokens as command-line arguments.</p>
+        <p>The default adapter pins <code>minimax/minimax-m3.1-flash:free</code>, enforces zero-price routing and disables paid fallback. Free accounts with fewer than $10 in purchased credits have a shared limit of 50 free-model requests/day and 20/minute. Baseline and Candidate can use the same model, but their labels alone do not change its prompt. Never pass keys or tokens as command-line arguments.</p>
         <H2 id="web">Web app</H2>
         <Table label="Web app variables" head={['Variable', 'Purpose']} rows={[
           [<code key="o">TASTECASE_API_ORIGIN</code>, 'Server-only fixed API origin for the same-origin proxy: HTTPS, or loopback HTTP for local development. No path, query or credentials.'],
