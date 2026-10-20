@@ -50,6 +50,8 @@ test('Gate 2 SQL: immutable evidence, isolation, budgets, recovery and cancellat
     await client.query(await readFile(new URL('./migrations/202610130001_gate1_foundation.sql', import.meta.url),'utf8'));
     const migration = await readFile(new URL('./migrations/202610130002_discovery.sql',import.meta.url),'utf8');
     await client.query(migration); await client.query(migration);
+    const httpMigration = await readFile(new URL('./migrations/202610180001_qloo_http_receipts.sql',import.meta.url),'utf8');
+    await client.query(httpMigration); await client.query(httpMigration);
     await client.query('INSERT INTO public.projects(id,owner_id,name) VALUES($1,$2,$3),($4,$5,$6)', [project,owner,'Synthetic discovery SQL',otherProject,otherOwner,'Other synthetic SQL']);
     await client.query('INSERT INTO public.catalog_versions(id,project_id,content,checksum,created_at) VALUES($1,$2,$3,$4,$5)', [catalogId,project,JSON.stringify(catalogPayload),checksum(catalogPayload),createdAt]);
     await client.query('INSERT INTO public.task_versions(id,project_id,catalog_version_id,content,checksum,created_at) VALUES($1,$2,$3,$4,$5,$6)', [taskId,project,catalogId,JSON.stringify(taskPayload),checksum(taskPayload),createdAt]);
@@ -117,9 +119,30 @@ test('Gate 2 SQL: immutable evidence, isolation, budgets, recovery and cancellat
     const evidenceId=randomUUID(); const contrastId=randomUUID(); const rankIds=[randomUUID(),randomUUID()];
     const facts={ kind:'facts',rankingEvidenceIds:rankIds,contrasts:[{ id:contrastId,entryIds:['one','two'],orders:{a:['one','two'],b:['two','one']} }],missingEntryIds:[],unmappedEntryIds:['unmapped'] };
     const putEvidence='SELECT * FROM public.put_discovery_evidence($1,$2,$3,$4,NULL,$5,$6)';
+    await t.test('HTTP receipts allow only bounded numeric diagnostics and retain legacy evidence compatibility',async()=>{
+      const receipt={maxAttempts:2,attempts:1,cacheHits:0,requests:[{endpoint:'/entities',status:429,retryAfterSeconds:600}]};
+      const data={kind:'resolve',anchorId:anchorB,providerStatus:'needs_input',candidates:[],http:receipt};
+      const id=randomUUID();await client.query(putEvidence,[project,job,lease,id,JSON.stringify(data),checksum(data)]);
+      assert.deepEqual((await client.query('SELECT data FROM public.discovery_tool_evidence WHERE id=$1',[id])).rows[0].data,data);
+      const invalid=[null,[],{...receipt,body:'Fixture unsafe'}, {...receipt,headers:{'X-Api-Key':'Fixture unsafe'}},
+        {...receipt,maxAttempts:3},{...receipt,attempts:2},{...receipt,attempts:'1'},{...receipt,cacheHits:0.5},
+        {...receipt,requests:[{...receipt.requests[0],endpoint:'/entities?key=Fixture'}]},
+        {...receipt,requests:[{...receipt.requests[0],requestId:'Fixture unsafe'}]},
+        {...receipt,requests:[{...receipt.requests[0],status:'429'}]},
+        {...receipt,requests:[{...receipt.requests[0],status:99}]},
+        {...receipt,requests:[{...receipt.requests[0],retryAfterSeconds:-1}]},
+        {...receipt,requests:[{...receipt.requests[0],retryAfterSeconds:0.5}]},
+        {...receipt,requests:[{endpoint:'/entities',status:429}]},
+      ];
+      for(const http of invalid) {const bad={...data,http};await fails(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(bad),checksum(bad)]);}
+      const unknownResponse={...data,http:{...receipt,requests:[{endpoint:'/entities',status:null,retryAfterSeconds:null}]}};
+      await client.query(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(unknownResponse),checksum(unknownResponse)]);
+    });
     await t.test('immutable normalised evidence idempotence and checksum conflict; checkpoints cannot go backwards', async () => {
       for (const [index,profileId] of ['a','b'].entries()) {
-        const rank={ kind:'rank',providerStatus:'ok',profileId,scope:'full',requestedEntryIds:['one','two'],orderedEntryIds:index===0?['one','two']:['two','one'],missingEntryIds:[],unmappedEntryIds:['unmapped'],mappingConfirmationIds:mappingIds,anchorConfirmationIds:[] };
+        const rank={ kind:'rank',providerStatus:'ok',profileId,scope:'full',requestedEntryIds:['one','two'],orderedEntryIds:index===0?['one','two']:['two','one'],missingEntryIds:[],unmappedEntryIds:['unmapped'],mappingConfirmationIds:mappingIds,anchorConfirmationIds:[],
+          ...(index===0?{http:{maxAttempts:2,attempts:1,cacheHits:0,requests:[{endpoint:'/v2/insights',status:200,retryAfterSeconds:null}]}}:{}),
+        };
         await client.query(putEvidence,[project,job,lease,rankIds[index],JSON.stringify(rank),checksum(rank)]);
         await fails(putEvidence,[project,job,lease,randomUUID(),JSON.stringify({...rank,orderedEntryIds:['one','outside']}),checksum('bad')]);
         await fails(putEvidence,[project,job,lease,randomUUID(),JSON.stringify({...rank,unmappedEntryIds:[]}),checksum('bad')]);

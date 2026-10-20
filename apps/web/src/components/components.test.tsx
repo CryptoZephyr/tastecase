@@ -1,12 +1,14 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CaseReview } from '@/components/case/case-review';
 import { ReviewPanel } from '@/components/case/review-panel';
 import { ProjectsScreen } from '@/components/screens/projects-screen';
 import { SampleScreen } from '@/components/screens/sample-screen';
 import { RunnerStep } from '@/components/setup/runner-step';
 import { ClassBadge, OutcomeBadge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/dialog';
 import { ApiProvider } from '@/lib/api/context';
 import { buildCaseView } from '@/lib/view/case-view';
 import { fixtureApi } from '@/test/fixture-api';
@@ -89,6 +91,66 @@ describe('case review', () => {
     await user.click(chips[0]);
     expect(screen.getAllByRole('button', { name: /Fixture Garden Table/, pressed: true }).length).toBe(chips.length);
     expect(screen.getAllByText(/Fixture Garden Table: not recommended in this output/).length).toBeGreaterThan(0);
+  });
+
+  it.each(['trigger', 'panel', 'close button'])('dismisses the desktop inspector from %s and returns focus to its trigger', async action => {
+    const media = vi.spyOn(window, 'matchMedia').mockReturnValue({ ...window.matchMedia(''), matches: true });
+    try {
+      const user = userEvent.setup();
+      render(<CaseReview view={buildCaseView(fx.caseResponse(), fx.jobDetail(), fx.attempts)} />);
+      const trigger = screen.getAllByRole('button', { name: /Inspect/ })[0]!;
+      trigger.focus();
+      await user.keyboard('{Enter}');
+      const panel = screen.getByRole('complementary', { name: 'Evidence inspector' });
+      const close = within(panel).getByRole('button', { name: 'Close inspector' });
+      if (action === 'close button') await user.click(close);
+      else {
+        if (action === 'panel') close.focus();
+        await user.keyboard('{Escape}');
+      }
+      expect(screen.queryByRole('complementary', { name: 'Evidence inspector' })).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    } finally { media.mockRestore(); }
+  });
+
+  it('dismisses a nested confirmation before the desktop inspector', async () => {
+    const media = vi.spyOn(window, 'matchMedia').mockReturnValue({ ...window.matchMedia(''), matches: true });
+    try {
+      const user = userEvent.setup();
+      render(<CaseReview view={buildCaseView(fx.caseResponse(), fx.jobDetail(), fx.attempts)} decision={
+        <ConfirmDialog trigger={<Button>Fixture confirmation</Button>} title="Fixture confirm" confirmLabel="Fixture confirm action" onConfirm={() => {}}>
+          Fixture confirmation text
+        </ConfirmDialog>
+      } />);
+      const trigger = screen.getAllByRole('button', { name: /Inspect/ })[0]!;
+      trigger.focus();
+      await user.keyboard('{Enter}');
+      const confirmation = screen.getByRole('button', { name: 'Fixture confirmation' });
+      await user.click(confirmation);
+      expect(screen.getByRole('alertdialog')).toBeTruthy();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(confirmation));
+      expect(screen.getByRole('complementary', { name: 'Evidence inspector' })).toBeTruthy();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('complementary', { name: 'Evidence inspector' })).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    } finally { media.mockRestore(); }
+  });
+
+  it('leaves the inspector open when a child consumes Escape', async () => {
+    const media = vi.spyOn(window, 'matchMedia').mockReturnValue({ ...window.matchMedia(''), matches: true });
+    try {
+      const user = userEvent.setup();
+      render(<CaseReview view={buildCaseView(fx.caseResponse(), fx.jobDetail(), fx.attempts)} decision={
+        <input aria-label="Fixture editor" onKeyDown={event => event.preventDefault()} />
+      } />);
+      screen.getAllByRole('button', { name: /Inspect/ })[0]!.focus();
+      await user.keyboard('{Enter}');
+      screen.getByRole('textbox', { name: 'Fixture editor' }).focus();
+      await user.keyboard('{Escape}');
+      expect(screen.getByRole('complementary', { name: 'Evidence inspector' })).toBeTruthy();
+    } finally { media.mockRestore(); }
   });
 });
 

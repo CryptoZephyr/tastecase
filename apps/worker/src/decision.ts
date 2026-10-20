@@ -42,9 +42,9 @@ export class OpenRouterDecisionAdapter implements DecisionAdapter {
     const verified = ComputedDiscoveryFactsSchema.parse(facts);
     const response = await this.request('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',redirect:'error',headers:{Authorization:`Bearer ${this.#key}`,'Content-Type':'application/json'},
-      body:JSON.stringify({model:'nvidia/nemotron-3-super-120b-a12b:free',temperature:0,max_tokens:512,
+      body:JSON.stringify({model:'minimax/minimax-m3.1-flash:free',temperature:0,max_tokens:2048,
         provider:{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}},
-        reasoning:{enabled:false,exclude:true},
+        reasoning:{effort:'low',exclude:true},
         messages:[{role:'system',content:'Choose one id from the supplied, software-verified contrasts to investigate. Prefer an observed order reversal when one is available; selecting it does not mean the assistant failed. Use null if no supported contrast is worth investigating. Reply ONLY with valid JSON exactly in this format: {"selectedContrastId":"a listed id"} or {"selectedContrastId":null}. Do not explain the choice. This selects an advisory synthetic investigation, not a correctness verdict.'},
           {role:'user',content:JSON.stringify(verified)}],
         response_format:{type:'json_object'},

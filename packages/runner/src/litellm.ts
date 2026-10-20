@@ -6,8 +6,8 @@ import { type Environment } from './client.js';
 import { RunnerError, readText, redactJson, redactText, validateEndpoint, validateTimeout, withDeadline, type Fetch } from './safety.js';
 
 export const LITELLM_ADAPTER_METADATA = Object.freeze({ name: 'litellm-openai', version: '1.0.0' });
-export const OPENROUTER_ADAPTER_METADATA = Object.freeze({ name: 'openrouter-nemotron-free', version: '1.0.0' });
-export const OPENROUTER_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+export const OPENROUTER_ADAPTER_METADATA = Object.freeze({ name: 'openrouter-minimax-free', version: '1.0.0' });
+export const OPENROUTER_MODEL = 'minimax/minimax-m3.1-flash:free';
 export function configuredAdapterMetadata(env: Environment = process.env) {
   const provider = env.TASTECASE_MODEL_PROVIDER ?? 'openrouter';
   if (!['openrouter', 'litellm'].includes(provider)) throw new RunnerError('configuration_error', 'Unsupported local model provider.');
@@ -110,8 +110,8 @@ export class LiteLLMAdapter implements TargetAdapter {
           body: JSON.stringify({
             model: this.#model,
             ...(this.#openRouter ? {
-              temperature: 0, max_tokens: 2048, response_format: { type: 'json_object' },
-              reasoning: { enabled: false, exclude: true },
+              temperature: 0, max_tokens: 4096, response_format: { type: 'json_object' },
+              reasoning: { effort: 'low', exclude: true },
               provider: { allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0, request: 0 } },
             } : {}),
             messages: [

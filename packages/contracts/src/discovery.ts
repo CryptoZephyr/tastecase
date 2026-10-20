@@ -96,6 +96,15 @@ export const DiscoveryAnchorConfirmationSchema = ConfirmDiscoveryAnchorRequestSc
 });
 /** Literal official status vocabulary. Adapter parsing must not accept a seventh status. */
 export const QlooStatusSchema = z.enum(['ok', 'empty', 'needs_input', 'partial', 'degraded', 'error']);
+export const QlooHttpDiagnosticsSchema = z.strictObject({
+  maxAttempts: z.literal(2), attempts: z.number().int().min(0).max(2), cacheHits: z.number().int().min(0).max(15),
+  requests: z.array(z.strictObject({
+    endpoint: z.enum(['/search', '/entities', '/v2/insights']),
+    status: z.number().int().min(100).max(599).nullable(),
+    retryAfterSeconds: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
+  })).max(2),
+}).refine(value => value.attempts === value.requests.length, 'HTTP attempts must match receipts');
+export type QlooHttpDiagnostics = z.infer<typeof QlooHttpDiagnosticsSchema>;
 export const NormalizedQlooErrorSchema = z.strictObject({ code: label, retryable: z.boolean(), category: z.enum(['auth', 'transient', 'invalid_input', 'unavailable']) })
   .refine(error => error.category !== 'auth' || !error.retryable, 'Authentication failures cannot be retried');
 export const RankingEvidenceSchema = z.strictObject({
@@ -104,6 +113,7 @@ export const RankingEvidenceSchema = z.strictObject({
   orderedEntryIds: entryIds.max(10), missingEntryIds: entryIds.max(10), unmappedEntryIds: entryIds,
   mappingConfirmationIds: recordIds, anchorConfirmationIds: recordIds,
   error: NormalizedQlooErrorSchema.optional(),
+  http: QlooHttpDiagnosticsSchema.optional(),
 }).superRefine((rank, ctx) => {
   const returned = new Set(rank.orderedEntryIds); const requested = new Set(rank.requestedEntryIds);
   if (rank.orderedEntryIds.some(id => !requested.has(id))
@@ -116,6 +126,7 @@ export const ResolutionEvidenceSchema = z.strictObject({
   kind: z.literal('resolve'), providerStatus: QlooStatusSchema, anchorId: IdSchema,
   candidates: z.array(AnchorCandidateSchema).max(10).refine(values => new Set(values.map(value => value.entityId)).size === values.length, 'Duplicate candidate IDs'),
   error: NormalizedQlooErrorSchema.optional(),
+  http: QlooHttpDiagnosticsSchema.optional(),
 });
 export const ContrastFactSchema = z.strictObject({
   id: IdSchema, entryIds: z.tuple([CatalogEntryIdSchema, CatalogEntryIdSchema]),

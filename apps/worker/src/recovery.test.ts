@@ -202,6 +202,26 @@ test('flagged transient backoff persists across worker restart; auth never retri
   }
 });
 
+test('a bounded Qloo 429 receipt survives database reopening and never schedules an automatic retry',async()=>{
+  const f=await fixture();const fake=syntheticAdapters({error:'transient'});
+  const qloo=fake.adapters.qloo();const original=qloo.rank.bind(qloo);
+  qloo.rank=async(request,context)=>({...await original(request,context),
+    error:{code:'QLOO_RATE_LIMIT',category:'transient',retryable:false},
+    http:{maxAttempts:2,attempts:1,cacheHits:0,requests:[{endpoint:'/entities',status:429,retryAfterSeconds:600}]},
+  });
+  try {
+    await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});
+    const reopened=new DiscoveryStore(f.store.database);const saved=await reopened.load(f.project,f.jobId);
+    assert.equal(saved.job.state,'unavailable');assert.equal(saved.job.counters.qlooAttempts,1);
+    const evidence=saved.evidence.find(value=>value.data.kind==='rank');assert.ok(evidence);
+    assert.equal(evidence.checksum,checksum(evidence.data));
+    assert.equal(evidence.data.kind==='rank' && evidence.data.http?.requests[0]?.retryAfterSeconds,600);
+    assert.equal(saved.providerAttempts[0]?.retryable,false);assert.equal(saved.providerAttempts[0]?.nextDispatchAt,null);
+    assert.equal(await runDiscoveryOnce(reopened,fake.adapters,{projectId:f.project}),false);
+    assert.equal(fake.calls.length,1);assert.equal(fake.decisions,0);assert.equal(saved.targets.length,0);
+  } finally {await f.close();}
+});
+
 test('eligible transient retry after persisted backoff consumes remaining budget across restart',async()=>{
   const f=await fixture({budgets:{qlooAttempts:2}});const fake=syntheticAdapters();
   try {

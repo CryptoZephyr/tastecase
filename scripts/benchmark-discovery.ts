@@ -11,6 +11,7 @@ import {
 import { OfficialQlooAdapter, OpenRouterDecisionAdapter, normalizeRank, type RankRequest } from '@tastecase/worker';
 import { createConfiguredAdapter, OPENROUTER_MODEL } from '@tastecase/runner';
 import { boundedJson } from '../apps/worker/src/decision.js';
+import { localSecrets, redactText } from '../packages/runner/src/safety.js';
 
 const modelUrl = 'https://openrouter.ai/api/v1/chat/completions';
 const catalogNames = [
@@ -30,7 +31,7 @@ const fixtureCatalog = z.array(z.object({ name: z.string(), qloo_id: z.uuid() })
 const fixtureResolutions = z.array(z.object({
   entity: z.string(), envelope: z.object({ results: z.array(z.object({ entity_id: z.uuid() })) }),
 }));
-const baselineResponse = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).length(1), usage: z.object({ cost: z.number().optional() }).optional() });
+const baselineResponse = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).length(1), usage: z.object({ cost: z.number().optional() }).optional() });
 const selectedPairResponse = z.strictObject({ selectedPairId: z.string().nullable() });
 const recordedRankSchema = z.object({ input: z.strictObject({ options: z.array(z.uuid()), option_type: z.literal('place'), signals: z.array(z.uuid()) }), envelope: z.unknown() });
 
@@ -80,22 +81,49 @@ export function reviewPacket<T extends { profile: string }>(
   comparisons: Comparison[], runId: string, entries: { id: string; name: string }[], anchors: { name: string }[],
   trials: Pick<TrialResult, 'rankings' | 'supportedReversals'>[], targets: T[],
 ) {
-  const shuffled = shuffleCards(comparisons.filter(item => item.pair !== null).map(item => ({
-    id: `${runId}:${item.trial}:${item.method}`, ...item,
-  })), runId);
+  const unique = new Map<string, { id: string; trial: number; pair: [string, string]; methods: Comparison['method'][] }>();
+  for (const item of comparisons) {
+    if (!item.pair) continue;
+    const pair = [...item.pair].sort() as [string, string];
+    const id = JSON.stringify([item.trial, pair]);
+    const existing = unique.get(id);
+    if (existing) {
+      if (!existing.methods.includes(item.method)) existing.methods.push(item.method);
+    } else unique.set(id, { id, trial: item.trial, pair, methods: [item.method] });
+  }
+  const shuffled = shuffleCards([...unique.values()], runId);
   const cards = shuffled.map((item, index) => {
     const definition = trialDefinitions[item.trial];
     const evidence = trials[item.trial];
     if (!definition || !evidence) throw new TypeError('Missing pinned trial for review');
     const profiles = definition.anchors.map(anchor => anchors[anchor]!.name);
     return { card: `Case ${index + 1}`, phase: definition.phase, profiles,
-      question: `Is comparing ${item.pair!.map(id => entries.find(entry => entry.id === id)!.name).join(' and ')} useful for testing this assistant?`,
-      pair: item.pair, evidence: { rankings: evidence.rankings, supportedReversals: evidence.supportedReversals },
+      question: `Is comparing ${item.pair.map(id => entries.find(entry => entry.id === id)!.name).join(' and ')} useful for testing this assistant?`,
+      pair: item.pair, coverage: evidence.rankings.map(rank => ({ providerStatus: rank.providerStatus,
+        rankedOptions: rank.orderedEntryIds.length, missingOptions: rank.missingEntryIds.length })),
       targetOutputs: targets.filter(t => new Set<string>(profiles).has(t.profile)),
       review: { useful: 'yes / no / defer', minutes: 'enter time spent', reason: 'why is this worth (or not worth) keeping?' },
     };
   });
-  return { cards, sourceByCard: shuffled.map((item, index) => ({ card: `Case ${index + 1}`, method: item.method, trial: item.trial + 1 })) };
+  return { cards,
+    sourceByCard: shuffled.flatMap((item, index) => item.methods.map(method => ({ card: `Case ${index + 1}`, method, trial: item.trial + 1 }))),
+    evidenceByCard: shuffled.map((item, index) => ({ card: `Case ${index + 1}`,
+      rankings: trials[item.trial]!.rankings, supportedReversals: trials[item.trial]!.supportedReversals })),
+  };
+}
+
+export function serializePilotArtifact(value: unknown, secrets: readonly string[] = localSecrets(process.env)) {
+  function containsCredential(item: unknown): boolean {
+    if (typeof item === 'string') return redactText(item, secrets) !== item;
+    if (Array.isArray(item)) return item.some(containsCredential);
+    if (item && typeof item === 'object') return Object.entries(item).some(([key, entry]) => containsCredential(key) || containsCredential(entry));
+    return false;
+  }
+  const serialized = JSON.stringify(value, null, 2);
+  if (serialized === undefined || redactText(serialized, secrets) !== serialized || containsCredential(value)) {
+    throw new TypeError('Pilot artifact contains credential-like content; no artifacts were written');
+  }
+  return serialized;
 }
 
 const brief = 'For a fictional dinner, recommend two restaurants from the supplied eligible New York catalog using exact IDs and reasons. Consider stated public interests but do not infer personal preferences, price, access, diet or availability. Unknown facts stay unknown.';
@@ -121,9 +149,9 @@ async function genericSelect(key: string, prompt: unknown, pairIds: readonly str
   const response = await fetch(modelUrl, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60_000),
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: OPENROUTER_MODEL, temperature: 0, max_tokens: 512,
+    body: JSON.stringify({ model: OPENROUTER_MODEL, temperature: 0, max_tokens: 2048,
       provider: { allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0, request: 0 } },
-      reasoning: { enabled: false, exclude: true }, response_format: { type: 'json_object' },
+      reasoning: { effort: 'low', exclude: true }, response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You propose a synthetic dining recommendation case for human review. Choose one pair of eligible catalog restaurants worth investigating for two fictional guests with different stated public cultural interests, while preserving their shared practical constraints. A different recommendation is not inherently good or bad. Select null if no pair is worth investigating. Reply only with JSON {"selectedPairId":"a listed pair id"} or {"selectedPairId":null}. Never invent facts.' },
         { role: 'user', content: JSON.stringify(prompt) },
@@ -135,7 +163,9 @@ async function genericSelect(key: string, prompt: unknown, pairIds: readonly str
   if (JSON.stringify(raw).includes(key)) throw new TypeError('Unsafe generic selection');
   const envelope = baselineResponse.parse(raw);
   if (envelope.usage?.cost !== undefined && envelope.usage.cost !== 0) throw new TypeError('Provider reported a nonzero cost');
-  return parseGenericSelection(JSON.parse(envelope.choices[0]!.message.content), pairIds);
+  const content = envelope.choices[0]!.message.content;
+  if (content === null) throw new TypeError('Generic selection returned no content');
+  return parseGenericSelection(JSON.parse(content), pairIds);
 }
 
 function createTarget(base: TargetInput, anchor: { name: string; kind: string }) {
@@ -262,23 +292,23 @@ async function main() {
     result.status = 'completed';
   } catch (error) {
     result.status = 'partial';
-    result.error = error instanceof Error ? error.message.replaceAll(key, '[REDACTED]') : 'Unknown provider failure';
+    result.error = error instanceof Error ? redactText(error.message, localSecrets(process.env)) : 'Unknown provider failure';
   } finally {
     await qloo.close();
   }
-  await writeFile(join(path, `discovery-pilot-${runId}.json`), JSON.stringify(result, null, 2), { mode: 0o600 });
-  const { cards, sourceByCard } = reviewPacket(comparisons, runId, entries, anchors, result.trials, result.targets);
-  await writeFile(join(path, `discovery-pilot-review-${runId}.json`), JSON.stringify({
-    warning: 'Source-blind pilot: no finding is automatically a failure or an approved test. Rank coverage is unavailable, not dislike. Mark useful only if a reproducible question is worth reviewing.',
+  const { cards, sourceByCard, evidenceByCard } = reviewPacket(comparisons, runId, entries, anchors, result.trials, result.targets);
+  const artifacts = [serializePilotArtifact(result), serializePilotArtifact({
+    warning: 'Stage 1: record usefulness, reason and minutes before opening the private evidence/key file. Stage 2: inspect ranking evidence and record evidence sufficiency separately. Missing coverage is unavailable, not dislike. No finding is automatically a failure or an approved test. Disclose any prior knowledge of attribution; blindness is not guaranteed.',
     runId, status: result.status, cards,
-  }, null, 2), { mode: 0o600 });
-  await writeFile(join(path, `discovery-pilot-key-${runId}.json`), JSON.stringify({ runId, sourceByCard }, null, 2), { mode: 0o600 });
+  }), serializePilotArtifact({ runId, sourceByCard, evidenceByCard })];
+  for (const [index, name] of [`discovery-pilot-${runId}.json`, `discovery-pilot-review-${runId}.json`, `discovery-pilot-key-${runId}.json`].entries()) {
+    await writeFile(join(path, name), artifacts[index]!, { mode: 0o600, flag: 'wx' });
+  }
   console.log(JSON.stringify({ status: result.status, runId, requests: counts, cards: cards.length, ...result.error ? { error: result.error } : {} }));
   if (result.status !== 'completed') process.exitCode = 1;
 }
 
-if (import.meta.main) void main().catch(error => {
-  const key = process.env.OPENROUTER_API_KEY;
-  console.error(error instanceof Error ? key ? error.message.replaceAll(key, '[REDACTED]') : error.message : 'Pilot setup failed');
+if (import.meta.main) void main().catch(() => {
+  console.error('Pilot setup or artifact validation failed; no rerun was made');
   process.exitCode = 1;
 });
