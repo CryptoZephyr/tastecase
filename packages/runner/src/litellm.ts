@@ -111,7 +111,7 @@ export class LiteLLMAdapter implements TargetAdapter {
             model: this.#model,
             ...(this.#openRouter ? {
               temperature: 0, max_tokens: 2048, response_format: { type: 'json_object' },
-              reasoning: { enabled: false, exclude: true },
+              reasoning: { effort: 'low', exclude: true },
               provider: { allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0, request: 0 } },
             } : {}),
             messages: [

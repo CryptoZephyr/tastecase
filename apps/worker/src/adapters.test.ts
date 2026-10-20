@@ -134,7 +134,7 @@ test('The decision model uses only computed facts, strict ID-only schema and fre
   assert.equal((await adapter.select(facts,{signal:new AbortController().signal,outputBytes:64000})).selectedContrastId,id);
   assert.equal(url,'https://openrouter.ai/api/v1/chat/completions'); assert.equal(body.model,'minimax/minimax-m3.1-flash:free'); assert.equal(body.tools,undefined);assert.equal(redirect,'error');
   assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
-  assert.deepEqual(body.reasoning,{enabled:false,exclude:true});
+  assert.deepEqual(body.reasoning,{effort:'low',exclude:true});
   assert.deepEqual(body.response_format,{type:'json_object'});assert.equal(body.max_tokens,512);
 });
 

@@ -151,7 +151,7 @@ async function genericSelect(key: string, prompt: unknown, pairIds: readonly str
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model: OPENROUTER_MODEL, temperature: 0, max_tokens: 512,
       provider: { allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0, request: 0 } },
-      reasoning: { enabled: false, exclude: true }, response_format: { type: 'json_object' },
+      reasoning: { effort: 'low', exclude: true }, response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You propose a synthetic dining recommendation case for human review. Choose one pair of eligible catalog restaurants worth investigating for two fictional guests with different stated public cultural interests, while preserving their shared practical constraints. A different recommendation is not inherently good or bad. Select null if no pair is worth investigating. Reply only with JSON {"selectedPairId":"a listed pair id"} or {"selectedPairId":null}. Never invent facts.' },
         { role: 'user', content: JSON.stringify(prompt) },
