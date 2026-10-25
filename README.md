@@ -1,12 +1,19 @@
 # TasteCase
 
-**Find overlooked dining recommendation cases and turn reviewed findings into tests your AI concierge can replay before a release.**
+**Release testing for AI assistants that recommend restaurants.**
 
-TasteCase is for the engineering and QA team, not the traveler. It tests recommendations against the team's own restaurant catalog. Qloo helps identify cultural contrasts worth investigating; a human decides which findings deserve an expectation.
+Say your team runs an AI concierge that suggests restaurants from your own list. You change the prompt or switch models, and the answers still read fine. But did it quietly stop suggesting the live-jazz soul food spot to the guest who loves music? Format checks won't tell you.
+
+TasteCase finds cases like that and turns the ones that matter into tests:
+
+1. Qloo's taste data ranks your restaurants for two fictional guests with different interests, such as a Radiohead fan and a fan of *The Grand Budapest Hotel*. Where their rankings flip, there's a case worth checking.
+2. TasteCase runs your assistant on that case and repeats it. The review card shows what Qloo saw: affinity scores, which interests mattered, and each restaurant's cuisine and ambience tags.
+3. A person on your team approves, edits or rejects the case. Qloo's ranking is evidence to look at, never an automatic pass or fail.
+4. Approved cases go into a frozen test suite. Before a release, you run two versions of your assistant against it and compare the results.
+
+TasteCase is built for the engineering and QA team, not for diners. Your assistant runs on your own machine through a local runner, so its model keys never reach TasteCase.
 
 Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](https://tastecase.vercel.app/docs) · Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/)
-
-The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed before deployment. The merged build is now hosted on Vercel and free Render. Recorded pre-deployment evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
 
 Built with: Qloo official MCP · NVIDIA Nemotron 3.5 Super VL (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
