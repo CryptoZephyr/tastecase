@@ -20,6 +20,55 @@ export interface WorkerOptions {
 }
 export interface WorkerAdapters { qloo: () => QlooAdapter; decision: DecisionAdapter }
 
+function providerSecretValues() {
+  return Object.entries(process.env).flatMap(([name,value]) =>
+    value && /(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|DATABASE_URL)/i.test(name) ? [value] : []);
+}
+
+function redactProviderDetail(value: string) {
+  let redacted = value;
+  for (const secret of providerSecretValues()) {
+    for (const representation of new Set([secret,JSON.stringify(secret).slice(1,-1)])) {
+      redacted = redacted.split(representation).join('[REDACTED]');
+    }
+  }
+  return redacted.replace(/tc_runner_[A-Za-z0-9_-]{43}/g,'[REDACTED]')
+    .replace(/Bearer\s+[^\s"'<>]+/gi,'Bearer [REDACTED]');
+}
+
+function causeClassNames(error: TypeError) {
+  if (error.cause === undefined) return undefined;
+  const names: string[] = [];
+  const seen = new Set<unknown>();
+  let cause: unknown = error.cause;
+  while (cause !== undefined && !seen.has(cause) && names.length < 8) {
+    seen.add(cause);
+    if (cause === null) names.push('Null');
+    else if (typeof cause === 'object' || typeof cause === 'function') {
+      const constructorName = Object.getPrototypeOf(cause)?.constructor?.name;
+      names.push(typeof constructorName === 'string' && /^[A-Za-z_$][\w$]*$/.test(constructorName) ? constructorName : 'Object');
+    } else {
+      names.push(typeof cause === 'string' ? 'String' : typeof cause === 'number' ? 'Number' : typeof cause === 'boolean' ? 'Boolean' : typeof cause);
+    }
+    cause = cause instanceof Error ? cause.cause : undefined;
+  }
+  return names;
+}
+
+function logProviderInvalidData(
+  jobId: string, operationKey: string, kind: 'qloo' | 'model', error: TypeError | z.ZodError | SyntaxError,
+) {
+  const errorClass = error instanceof z.ZodError ? 'ZodError' : error instanceof SyntaxError ? 'SyntaxError' : 'TypeError';
+  const detail = error instanceof z.ZodError
+    ? error.issues.slice(0,10).map(issue => ({path:issue.path.join('.'),code:issue.code}))
+    : error instanceof SyntaxError ? null : redactProviderDetail(error.message.slice(0,160));
+  const causes = error instanceof TypeError ? causeClassNames(error) : undefined;
+  console.error(JSON.stringify({
+    event:'discovery_provider_invalid_data',jobId,operationKey,kind,errorClass,detail,
+    ...(causes ? {causeClasses:causes} : {}),
+  }));
+}
+
 function rankRequest(snapshot: Snapshot, profileId: 'a' | 'b', pair?: [string,string]): RankRequest {
   const input = snapshot.job.input.targetInput;
   const mapped = input.mappings.filter(mapping => input.eligibleCatalogEntryIds.includes(mapping.catalogEntryId));
@@ -76,6 +125,7 @@ async function operation(
     if (signal.aborted) throw error;
     if (error instanceof TypeError || error instanceof z.ZodError || error instanceof SyntaxError) {
       const code = error.message === 'MODEL_AUTH' ? 'MODEL_AUTH' : error.message === 'MODEL_UNAVAILABLE' ? 'MODEL_UNAVAILABLE' : 'PROVIDER_INVALID_DATA';
+      logProviderInvalidData(job.id,key,kind,error);
       await store.fail(job,id,code === 'MODEL_AUTH' ? 'auth' : code === 'PROVIDER_INVALID_DATA' ? 'invalid_input' : 'unavailable',code);
       throw new StopWork('unavailable','Provider access, schema compatibility or output validation was unavailable. No taste verdict was made.');
     }

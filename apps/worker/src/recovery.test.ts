@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import pg from 'pg';
+import { z } from 'zod';
 import {
   checksum, CreateDiscoveryJobRequestSchema, CreateCatalogVersionRequestSchema,
   CreateTaskVersionRequestSchema, PinnedDiscoveryInputSchema, RankingEvidenceSchema,
@@ -117,6 +118,12 @@ const fullRequest=(snapshot:Snapshot,profileId:'a'|'b'):RankRequest=>({profileId
   }),unmappedEntryIds:[],
 });
 
+function captureStderr() {
+  const original=console.error;const lines:string[]=[];
+  console.error=(...values:unknown[])=>{lines.push(values.map(String).join(' '));};
+  return {lines,restore:()=>{console.error=original;}};
+}
+
 test('local PostgreSQL: repeats, restart checkpoints, safe same-pair reduction and immutable reopening',async()=>{
   const f=await fixture(); const fake=syntheticAdapters();
   try {
@@ -186,6 +193,57 @@ test('model hallucinated contrast IDs are rejected and never schedule targets',a
   const f=await fixture();const fake=syntheticAdapters({hallucinate:true});
   try {await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});const saved=await f.snapshot();assert.equal(saved.job.state,'unavailable');assert.equal(saved.targets.length,0);assert.equal(saved.providerAttempts.find(attempt=>attempt.kind==='model')?.errorCode,'PROVIDER_INVALID_DATA');}
   finally {await f.close();}
+});
+
+test('provider Zod failures log only paths and codes',async()=>{
+  const f=await fixture();const providerValue='SECRET-PROVIDER-VALUE-123';
+  const fake=syntheticAdapters({rank:async()=>{
+    z.object({providerField:z.number()}).parse({providerField:providerValue});
+  }});
+  const stderr=captureStderr();
+  try {
+    await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});
+    assert.equal(stderr.lines.length,1);
+    const event=JSON.parse(stderr.lines[0]!) as Record<string,unknown>;
+    assert.equal(event.event,'discovery_provider_invalid_data');assert.equal(event.jobId,f.jobId);
+    assert.equal(event.operationKey,'rank:full:a');assert.equal(event.kind,'qloo');assert.equal(event.errorClass,'ZodError');
+    assert.deepEqual(event.detail,[{path:'providerField',code:'invalid_type'}]);
+    assert.equal(stderr.lines[0]!.includes(providerValue),false);
+    const saved=await f.snapshot();assert.equal(saved.job.state,'unavailable');
+    assert.equal(saved.providerAttempts[0]?.errorCode,'PROVIDER_INVALID_DATA');
+  } finally {stderr.restore();await f.close();}
+});
+
+test('provider SyntaxErrors log a null detail',async()=>{
+  const f=await fixture();const fake=syntheticAdapters({rank:async()=>{throw new SyntaxError('Unexpected token in provider data');}});
+  const stderr=captureStderr();
+  try {
+    await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});
+    assert.equal(stderr.lines.length,1);
+    const event=JSON.parse(stderr.lines[0]!) as Record<string,unknown>;
+    assert.equal(event.operationKey,'rank:full:a');assert.equal(event.errorClass,'SyntaxError');assert.equal(event.detail,null);
+  } finally {stderr.restore();await f.close();}
+});
+
+test('provider TypeError messages redact configured secrets and log cause classes only',async()=>{
+  const f=await fixture();const secret='configured-provider-secret-123';
+  const previous=process.env.OPENROUTER_API_KEY;process.env.OPENROUTER_API_KEY=secret;
+  const fake=syntheticAdapters({rank:async()=>{
+    throw new TypeError(`Provider failure: ${secret}`,{cause:new Error(`Cause contained ${secret}`)});
+  }});
+  const stderr=captureStderr();
+  try {
+    await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});
+    assert.equal(stderr.lines.length,1);
+    const event=JSON.parse(stderr.lines[0]!) as Record<string,unknown>;
+    assert.equal(event.operationKey,'rank:full:a');assert.equal(event.errorClass,'TypeError');
+    assert.equal(event.detail,'Provider failure: [REDACTED]');assert.deepEqual(event.causeClasses,['Error']);
+    assert.equal(stderr.lines[0]!.includes(secret),false);
+  } finally {
+    stderr.restore();
+    if(previous===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=previous;
+    await f.close();
+  }
 });
 
 test('flagged transient backoff persists across worker restart; auth never retries',async()=>{
