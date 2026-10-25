@@ -229,7 +229,7 @@ async function execute(store: DiscoveryStore, initial: Snapshot, qloo: QlooAdapt
   }
   const facts = ComputedDiscoveryFactsSchema.parse(snapshot.evidence.find(evidence=>evidence.data.kind==='facts')?.data);
   if (facts.unsupportedReason) throw new StopWork('unavailable','Provider status does not support software-computed order contrasts. Coverage remains recorded.');
-  if (!facts.contrasts.length) throw new StopWork('no_useful_contrast','No supported order reversal was observed among jointly covered fixed-catalog options. Missing coverage is not negative preference.');
+  if (!facts.contrasts.length) throw new StopWork('no_useful_contrast','No supported order reversal was observed among jointly covered fixed-catalog options after skipping reversals whose Qloo affinity gaps were under 0.01 for both profiles. Missing coverage is not negative preference.');
   if (snapshot.job.checkpoint==='ranks') {
     const evidence = await call('select','model',facts,async context=>validateModelContrastDecision(await decision.select(facts,context),facts));
     await store.advance(snapshot.job,{state:'running_target',checkpoint:3,evidenceIds:[evidence.id]}); await reload();

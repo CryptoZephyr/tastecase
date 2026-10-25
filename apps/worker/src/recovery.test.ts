@@ -87,7 +87,7 @@ async function fixture(options: FixtureOptions={}) {
     close:async()=>{await client.query('ROLLBACK');await client.end();}};
 }
 
-function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; rank?: (request:RankRequest,context:ProviderContext)=>Promise<void>; error?:'auth'|'transient'; hallucinate?:boolean }={}) {
+function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; weakAffinityGaps?:boolean; rank?: (request:RankRequest,context:ProviderContext)=>Promise<void>; error?:'auth'|'transient'; hallucinate?:boolean }={}) {
   const calls:RankRequest[]=[]; let resolves=0; let decisions=0; let closes=0;
   const qloo:QlooAdapter={
     async resolve(anchor) { resolves++; return {kind:'resolve',anchorId:anchor.id,providerStatus:'needs_input',candidates:[
@@ -102,6 +102,8 @@ function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; rank?: (
         requestedEntryIds:request.options.map(option=>option.entryId),orderedEntryIds:config.error?[]:ordered,
         missingEntryIds:request.options.filter(option=>config.error || !ordered.includes(option.entryId)).map(option=>option.entryId),unmappedEntryIds:request.unmappedEntryIds,
         mappingConfirmationIds:request.options.map(option=>option.confirmationId),anchorConfirmationIds:request.anchors.map(anchor=>anchor.confirmationId),
+        ...(config.weakAffinityGaps?{affinities:request.options.map(option=>({entryId:option.entryId,
+          affinity:request.profileId==='a'?(option.entryId==='entry-0'?0.77:0.7695):(option.entryId==='entry-0'?0.69:0.6899),interests:[]}))}:{}),
         ...(config.error?{error:{code:config.error==='auth'?'QLOO_AUTH':'QLOO_RATE_LIMIT',category:config.error,retryable:config.error==='transient'}}:{}),
       });
     },
@@ -169,6 +171,18 @@ test('no useful reversal and coverage omissions never become a taste failure or 
       assert.ok(fake.calls.every(request=>!request.options.some(option=>option.entryId==='unmapped')));
     } finally {await f.close();}
   }
+});
+
+test('weak affinity reversals stop with the specific no-useful-contrast reason',async()=>{
+  const f=await fixture();const fake=syntheticAdapters({weakAffinityGaps:true});
+  const reason='No supported order reversal was observed among jointly covered fixed-catalog options after skipping reversals whose Qloo affinity gaps were under 0.01 for both profiles. Missing coverage is not negative preference.';
+  try {
+    await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project}); const saved=await f.snapshot();
+    assert.equal(saved.job.state,'no_useful_contrast');assert.equal(saved.job.reason,reason);assert.ok(reason.length<=2000);
+    assert.equal(fake.decisions,0);assert.equal(saved.targets.length,0);assert.equal(fake.calls.length,2);
+    const facts=saved.evidence.find(evidence=>evidence.data.kind==='facts')?.data;
+    assert.equal(facts?.kind,'facts');if (facts?.kind==='facts') assert.equal(facts.contrasts.length,0);
+  } finally {await f.close();}
 });
 
 test('ambiguous public anchors require observed owner confirmation before ranking',async()=>{
