@@ -67,7 +67,7 @@ Start with [Inspect a case](https://tastecase.vercel.app/sample), a saved exampl
 - The API runs on Render's free tier and sleeps when idle, so the first request after a pause can take up to about a minute.
 - Code: `apps/worker/src/qloo-http.ts` contains the bounded Qloo transport (`minimumDispatchGapMs`); `apps/worker/src/qloo-mcp.ts` and `apps/worker/src/qloo.ts` wire the `qloo_rank` tool and calls. Contrast selection is in `apps/worker/src/decision.ts`.
 
-<!-- judge signup verification pending -->
+- Signup was checked on production on 2026-10-25 with a fresh account. It needs email confirmation, the confirmation email arrived in under half a minute, and its link signed the account in. Project setup and runner-token issue and revocation also worked.
 
 ## Product / demo
 
