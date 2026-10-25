@@ -242,6 +242,15 @@ export function discoveryAttemptId(jobId: string, operation: string, ordinal: nu
   const hex = createHash('sha256').update(canonicalJson(['tastecase-discovery-v1', jobId.toLowerCase(), operation, ordinal])).digest('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
+export const MIN_CONTRAST_AFFINITY_GAP = 0.01;
+
+function rawAffinityGap(rank: RankingEvidence, firstEntryId: string, secondEntryId: string): number | undefined {
+  const firstAffinity = rank.affinities?.find(affinity => affinity.entryId === firstEntryId)?.affinity;
+  const secondAffinity = rank.affinities?.find(affinity => affinity.entryId === secondEntryId)?.affinity;
+  if (firstAffinity === undefined || secondAffinity === undefined) return undefined;
+  return Math.abs(firstAffinity - secondAffinity);
+}
+
 /** Compute within-query reversals without combining scores or treating missing IDs as disliked. */
 export function computeDiscoveryFacts(jobId: string, evidenceIds: [string, string], a: RankingEvidence, b: RankingEvidence): ComputedDiscoveryFacts {
   RankingEvidenceSchema.parse(a); RankingEvidenceSchema.parse(b);
@@ -255,6 +264,10 @@ export function computeDiscoveryFacts(jobId: string, evidenceIds: [string, strin
       if (first === undefined || second === undefined) continue;
       const bi = b.orderedEntryIds.indexOf(first); const bj = b.orderedEntryIds.indexOf(second);
       if (bi < 0 || bj < 0 || bi < bj) continue;
+      const gapA = rawAffinityGap(a, first, second);
+      const gapB = rawAffinityGap(b, first, second);
+      if (gapA !== undefined && gapB !== undefined
+        && gapA < MIN_CONTRAST_AFFINITY_GAP && gapB < MIN_CONTRAST_AFFINITY_GAP) continue;
       contrasts.push({ id: discoveryAttemptId(jobId, `contrast:${checksum([first, second])}`, 0), entryIds: [first, second], orders: { a: [first, second], b: [second, first] } });
     }
   }

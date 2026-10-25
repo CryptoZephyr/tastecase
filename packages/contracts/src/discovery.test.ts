@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import {
   checksum, CreateDiscoveryJobRequestSchema, PinnedDiscoveryInputSchema, RankingEvidenceSchema,
   QlooStatusSchema, NormalizedDiscoveryEvidenceSchema, DiscoveryCandidateContentSchema, DiscoveryAnchorConfirmationSchema, DiscoveryProviderAttemptSchema,
-  computeDiscoveryFacts, validateModelContrastDecision, validateDiscoveryCandidate, discoveryAttemptId, REST_CONTRACTS,
+  computeDiscoveryFacts, validateModelContrastDecision, validateDiscoveryCandidate, discoveryAttemptId, MIN_CONTRAST_AFFINITY_GAP, REST_CONTRACTS,
 } from './index.js';
 
 const projectId=randomUUID(); const catalogId=randomUUID(); const taskId=randomUUID(); const jobId=randomUUID(); const ownerId=randomUUID();
@@ -24,6 +24,7 @@ const input=PinnedDiscoveryInputSchema.parse({schema_version:'1.0.0',request,tar
 const a=RankingEvidenceSchema.parse({kind:'rank',providerStatus:'ok',profileId:'a',scope:'full',requestedEntryIds:['one','two','omitted'],orderedEntryIds:['one','two'],missingEntryIds:['omitted'],unmappedEntryIds:['unmapped'],mappingConfirmationIds:request.mappingConfirmationIds,anchorConfirmationIds:[]});
 const b=RankingEvidenceSchema.parse({...a,profileId:'b',providerStatus:'partial',orderedEntryIds:['two','one']});
 const facts=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,b);
+const withAffinities=(rank:typeof a,values:Record<string,number>)=>({...rank,affinities:Object.entries(values).map(([entryId,affinity])=>({entryId,affinity,interests:[]}))});
 
 test('default and maximum budgets bound all dispatch classes; optional IDs are explicit owner confirmations',()=>{
   assert.deepEqual(request.budgets,{qlooAttempts:8,modelDecisions:2,targetAttempts:6,rounds:3,deadlineSeconds:900,outputBytes:64000,retriesPerOperation:1});
@@ -79,6 +80,35 @@ test('no contrast, degraded and empty evidence never invent a taste verdict',()=
   assert.equal(computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,orderedEntryIds:['one','two']}).contrasts.length,0);
   assert.equal(computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,providerStatus:'degraded'}).unsupportedReason,'provider_unavailable');
   assert.equal(computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,providerStatus:'empty',orderedEntryIds:[],missingEntryIds:b.requestedEntryIds}).contrasts.length,0);
+});
+test('weak affinity gaps in both profiles skip the reversed pair',()=>{
+  assert.equal(MIN_CONTRAST_AFFINITY_GAP,0.01);
+  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
+    withAffinities(a,{one:0.8,two:0.795}),withAffinities(b,{one:0.6,two:0.595}));
+  assert.equal(result.contrasts.length,0);
+});
+test('the specified raw weak affinity gaps skip the reversed pair',()=>{
+  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
+    withAffinities(a,{one:0.77,two:0.7695}),withAffinities(b,{one:0.69,two:0.6899}));
+  assert.equal(result.contrasts.length,0);
+});
+test('a profile gap at the threshold keeps the reversed pair',()=>{
+  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
+    withAffinities(a,{one:0.81,two:0.8}),withAffinities(b,{one:0.69,two:0.6899}));
+  assert.equal(result.contrasts.length,1);
+});
+test('missing affinity evidence keeps the reversed pair',()=>{
+  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
+    withAffinities(a,{one:0.8}),withAffinities(b,{one:0.69,two:0.6899}));
+  assert.equal(result.contrasts.length,1);
+});
+test('kept contrasts preserve the previous facts JSON byte-for-byte',()=>{
+  const evidenceIds:[string,string]=[randomUUID(),randomUUID()];
+  const previousFacts=computeDiscoveryFacts(jobId,evidenceIds,a,b);
+  const factsWithAffinities=computeDiscoveryFacts(jobId,evidenceIds,
+    withAffinities(a,{one:0.77,two:0.75}),withAffinities(b,{one:0.69,two:0.6899}));
+  assert.equal(factsWithAffinities.contrasts.length,1);
+  assert.equal(JSON.stringify(factsWithAffinities),JSON.stringify(previousFacts));
 });
 test('separate affinity calls cannot be merged or reduced and presented as a common full-catalog rank',()=>{
   assert.throws(()=>computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,scope:'reduced_pair',requestedEntryIds:['one','two'],missingEntryIds:[]}),/fixed mapped catalog/);
