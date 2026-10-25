@@ -4,13 +4,13 @@
 
 TasteCase is for the engineering and QA team, not the traveler. It tests recommendations against the team's own restaurant catalog. Qloo helps identify cultural contrasts worth investigating; a human decides which findings deserve an expectation.
 
-Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](https://tastecase.vercel.app/docs) · Video: not available · Submission: not submitted
+Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](https://tastecase.vercel.app/docs) · Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/)
 
 The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed before deployment. The merged build is now hosted on Vercel and free Render. Recorded pre-deployment evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
 
 Built with: Qloo official MCP · NVIDIA Nemotron 3.5 Super VL (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
-**Status: hosted web app, private projects, backend, local runner and a read-only [public sample](https://tastecase.vercel.app/sample). The repository stays private.**
+**Status: hosted web app, private projects, backend, local runner and a read-only [public sample](https://tastecase.vercel.app/sample).**
 
 ![TasteCase's live homepage](docs/images/live-homepage.png)
 
@@ -60,6 +60,15 @@ Missing cultural evidence is not a negative preference. An incomplete trace cann
 
 Start with [Inspect a case](https://tastecase.vercel.app/sample), a saved example you can read without an account or model key. Its diners are fictional; the Qloo rankings and assistant answers came from a real run. Reading it makes no new provider calls. To test your own assistant, sign in to the [hosted app](https://tastecase.vercel.app) and connect your local runner. See the [in-app docs](https://tastecase.vercel.app/docs) for the steps. Live runs need authorised credentials and provider allowance; CI uses synthetic fixtures instead.
 
+## For judges
+
+- Without an account: the [public sample](https://tastecase.vercel.app/sample) shows one saved case with real Qloo rankings and assistant answers for fictional diners, and the [in-app docs](https://tastecase.vercel.app/docs). Neither makes provider calls.
+- Full live run: sign up on the hosted app, create a project, issue a runner token, and run the local runner (`packages/runner`, see [docs/runner.md](docs/runner.md)) with your own free OpenRouter key. Qloo calls run on our backend with our hackathon key. Your assistant credentials stay on your machine.
+- The API runs on Render's free tier and sleeps when idle, so the first request after a pause can take up to about a minute.
+- Code: `apps/worker/src/qloo-http.ts` contains the bounded Qloo transport (`minimumDispatchGapMs`); `apps/worker/src/qloo-mcp.ts` and `apps/worker/src/qloo.ts` wire the `qloo_rank` tool and calls. Contrast selection is in `apps/worker/src/decision.ts`.
+
+- Signup was checked on production on 2026-10-25 with a fresh account. It needs email confirmation, the confirmation email arrived in under half a minute, and its link signed the account in. Project setup and runner-token issue and revocation also worked.
+
 ## Product / demo
 
 The product has a hosted web app, in-app docs (`/docs`), an owner-authenticated API and a local runner CLI. The web transport is tested against the real API and local database, including review, publication, comparison and downloads. The public sample shows one recorded case, not an interactive run of every product step.
@@ -83,7 +92,7 @@ flowchart TB
 | Tool | Role | Current state |
 |---|---|---|
 | Qloo official MCP | Resolve public anchors and rank the fixed eligible options | Integrated worker, live full/reduced rankings and missing-coverage handling verified |
-| OpenRouter / NVIDIA Nemotron 3.5 Super VL (free) | Choose a code-verified contrast; default local runner target | Selected 2026-10-25 after the MiniMax free route was delisted; live pilot pending |
+| OpenRouter / NVIDIA Nemotron 3.5 Super VL (free) | Choose a code-verified contrast; default local runner target | Bounded live pilot completed 2026-10-25; reasoning disabled for this model |
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
 | Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; real-provider browser journey verified |
 | Fastify / Node | One API/worker process with a Postgres-backed queue | Local startup, readiness, cancellation and restart tests pass |
@@ -94,6 +103,10 @@ flowchart TB
 A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3.5-super-vl:free` through OpenRouter. Earlier Nemotron 3 Super and Nova Micro evidence below is historical, not verification of this model.
 
 ## Evidence
+
+Bounded discovery pilot on NVIDIA Nemotron 3.5 Super VL (2026-10-25): three Qloo ranking workflows made six HTTP requests, all returning 200, spaced at least 250 ms apart. Twelve free model calls (three guided selections, three generic selections, six target calls) reported $0, with no retries or provider fallbacks. The guided selector chose a case in two of three trials and the generic selector abstained in all three, producing two blinded review cards that no human has reviewed yet. Two earlier attempts the same day stopped cleanly: one on a provider `MODEL_UNAVAILABLE`, and one on an empty answer after low-effort reasoning used about 760 of 771 output tokens, which led to disabling reasoning. This shows the pipeline runs on the new model. It doesn't show that the cases are useful.
+
+Qloo rate-limit fix (2026-10-25): Qloo support reported a 5 requests/second hackathon limit. TasteCase now batches entity lookups, makes at most two HTTP requests per workflow, disables hidden retries and spaces dispatches by 250 ms.
 
 Hosted browser verification (2026-10-14): genuine Qloo/Nemotron discovery, advisory review, immutable suite publication, a complete **8/8** comparison, frozen report/pack downloads and reopening through the deployed services. **One hosted decision plus ten local assistant requests; the ten local responses reported $0. Four Qloo calls; no model retries or paid fallback.** A transient session-verification timeout recovered with the visible retry; its cause was not established. The downloaded hosted pack was not replayed in this run. The pre-deployment replay evidence below remains separate.
 
@@ -218,11 +231,12 @@ It requires local `DATABASE_URL` and local `OPENROUTER_API_KEY`. It uses a synth
 
 See [runner setup and adapter contract](docs/runner.md) and [security boundaries](SECURITY.md).
 
-For the bounded Qloo → Nova → runner check, see [live discovery verification](docs/discovery.md#live-verification). It uses private public-entity fixtures and never commits raw provider replies.
+For the bounded Qloo → free model → runner check, see [live discovery verification](docs/discovery.md#live-verification). It uses private public-entity fixtures and never commits raw provider replies.
 
 ## Limitations
 
 - The 2026-10-25 dependency refresh upgraded Next.js to 16.4.3, Zod to 4.6.7, Fastify to 5.12.7 and the worker MCP SDK to 1.32.2. The main-branch audit reported 9 vulnerabilities before the refresh; `npm audit` now reports zero. The lockfile resolves body-parser to 2.4.0, fast-uri to 3.1.9 and 4.2.3, and undici to 8.12.3 while retaining the Pi harness brace-expansion pin at 5.0.12. `npm run check` passed 512 tests, including 56 PostgreSQL checks, with zero skips. Keep the lockfile because upstream Pi publishes a shrinkwrap. See [dependency verification](docs/discovery.md#dependency-security).
+- The free OpenRouter route can be rate-limited or delisted without notice, as happened to the earlier MiniMax and Gemma free routes. TasteCase stops cleanly and never falls back to a paid model.
 - The ranking workflow accepts at most ten mapped options. Larger inputs are explicitly unsupported, not silently split into incomparable scores.
 - Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
