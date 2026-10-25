@@ -108,7 +108,7 @@ Bounded discovery pilot on NVIDIA Nemotron 3.5 Super VL (2026-10-25): three Qloo
 
 Qloo rate-limit fix (2026-10-25): Qloo support reported a 5 requests/second hackathon limit. TasteCase now batches entity lookups, makes at most two HTTP requests per workflow, disables hidden retries and spaces dispatches by 250 ms.
 
-Qloo signals on review cards (2026-10-25): a 2-request live probe confirmed explainability and place tags on the hackathon API. The card section was checked with synthetic fixtures at desktop and phone widths. No live discovery has run on this code yet, and the public sample was recorded before it.
+Qloo signals on review cards (2026-10-25): a 2-request live probe confirmed explainability and place tags on the hackathon API. The card section was checked with synthetic fixtures at desktop and phone widths. A hosted synthetic discovery run on 2026-10-25 then produced the current public sample: 8 Qloo requests, all HTTP 200, 7 free Nemotron calls and 4 rank evidence rows with affinity and interest influence, plus 108 place tags. One of six assistant attempts timed out and is shown as a gap. Two earlier hosted attempts that day stopped on a Qloo step with `PROVIDER_INVALID_DATA`, and the cause is not yet known. The worker now logs a safe description of that failure.
 
 <details>
 <summary>Earlier verification (Oct 13 to 14, historical)</summary>
@@ -254,7 +254,7 @@ For the bounded Qloo → free model → runner check, see [live discovery verifi
 
 - Verify deliberate hosted cold-start recovery, cancellation and objective-rule failures.
 - Replay a newly downloaded hosted pack.
-- Re-record the public sample so it shows Qloo signals.
+- Find the cause of the intermittent hosted `PROVIDER_INVALID_DATA` on Qloo rank steps, and let the local runner keep claiming work after a single target timeout.
 - Measure whether Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## License
