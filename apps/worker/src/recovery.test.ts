@@ -12,7 +12,7 @@ import { DiscoveryStore, PoolDatabase, type WorkerDatabase, type Queryable } fro
 import { runDiscoveryOnce } from './engine.js';
 import { parseSelection } from './decision.js';
 import { syntheticTarget } from './synthetic.js';
-import type { QlooAdapter, RankRequest, ProviderContext, Snapshot } from './types.js';
+import { ModelHttpError, type QlooAdapter, type RankRequest, type ProviderContext, type Snapshot } from './types.js';
 
 // Never allow the integration tests to bootstrap or mutate a hosted database.
 const connectionString=process.env.WORKER_TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:55432/tastecase_test';
@@ -283,6 +283,28 @@ test('provider TypeError messages redact configured secrets and log cause classe
     stderr.restore();
     if(previous===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=previous;
     await f.close();
+  }
+});
+
+test('model rate limits keep their status and quota reason while other unavailable errors keep the old reason',async()=>{
+  const cases=[
+    {error:new ModelHttpError('MODEL_RATE_LIMITED',429),code:'MODEL_RATE_LIMITED',reason:"The free model was rate limited or reached its daily free quota (OpenRouter's free daily quota resets at 00:00 UTC). No taste verdict was made. Try again later.",httpStatus:429},
+    {error:new TypeError('MODEL_UNAVAILABLE'),code:'MODEL_UNAVAILABLE',reason:'Provider access, schema compatibility or output validation was unavailable. No taste verdict was made.',httpStatus:undefined},
+  ] as const;
+  for (const expected of cases) {
+    const f=await fixture();const fake=syntheticAdapters();
+    fake.adapters.decision.select=async()=>{throw expected.error;};
+    const stderr=captureStderr();
+    try {
+      await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});
+      const saved=await f.snapshot();
+      assert.equal(saved.job.state,'unavailable');assert.equal(saved.job.reason,expected.reason);
+      const attempt=saved.providerAttempts.find(value=>value.kind==='model');assert.ok(attempt);
+      assert.equal(attempt.errorCategory,'unavailable');assert.equal(attempt.errorCode,expected.code);
+      assert.equal(stderr.lines.length,1);
+      const event=JSON.parse(stderr.lines[0]!) as Record<string,unknown>;
+      assert.equal(event.event,'discovery_provider_invalid_data');assert.equal(event.httpStatus,expected.httpStatus);
+    } finally {stderr.restore();await f.close();}
   }
 });
 

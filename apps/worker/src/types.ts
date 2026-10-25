@@ -45,6 +45,9 @@ export interface ScheduledTarget {
 export class StopWork extends Error {
   constructor(readonly state: DiscoveryState, readonly safeReason: string, readonly delaySeconds = 0) { super(safeReason); }
 }
+export class ModelHttpError extends TypeError {
+  constructor(message: 'MODEL_AUTH' | 'MODEL_RATE_LIMITED' | 'MODEL_UNAVAILABLE', readonly httpStatus: number) { super(message); }
+}
 /** An unknown transport outcome is not an official retryable provider error. */
 export class UnknownDispatch extends Error {
   constructor() { super('Provider dispatch outcome is unknown; the reservation remains charged.'); }

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { computeDiscoveryFacts, RankingEvidenceSchema } from '@tastecase/contracts';
 import { childEnvironment, normalizeRank, normalizeResolution, parseEnvelope, validateTools, OfficialQlooAdapter, QlooEntityTagsSchema, QLOO_HOST } from './qloo.js';
 import { parseSelection, OpenRouterDecisionAdapter, boundedJson } from './decision.js';
-import { UnknownDispatch, type RankRequest } from './types.js';
+import { ModelHttpError, UnknownDispatch, type RankRequest } from './types.js';
 import { startDiscoveryWorker } from './main.js';
 
 const request: RankRequest = {profileId:'a',scope:'full',options:[
@@ -182,10 +182,12 @@ test('OpenRouter auth does not retry; transport errors remain unknown; streaming
 });
 
 test('OpenRouter decision failures never fall back, retry or retain provider errors',async()=>{
-  for (const status of [402,429,500,503]) {
+  for (const [status,code] of [[429,'MODEL_RATE_LIMITED'],[502,'MODEL_UNAVAILABLE'],[401,'MODEL_AUTH']] as const) {
     let calls=0;
     const adapter=new OpenRouterDecisionAdapter('synthetic-private-key',async()=>{calls++;return new Response('synthetic-private-key upstream private error',{status});});
-    await assert.rejects(adapter.select(facts,{signal:new AbortController().signal,outputBytes:64000}),/^TypeError: MODEL_UNAVAILABLE$/);
+    const error=await adapter.select(facts,{signal:new AbortController().signal,outputBytes:64000}).catch(value=>value);
+    assert.match(String(error),new RegExp(`^TypeError: ${code}$`));
+    assert.ok(error instanceof ModelHttpError);assert.equal(error.httpStatus,status);
     assert.equal(calls,1);
   }
   assert.throws(()=>new OpenRouterDecisionAdapter(''));

@@ -118,7 +118,7 @@ export class DiscoveryStore {
   async dispatch(job: DiscoveryJob, id: string) {
     await this.database.query('SELECT public.dispatch_discovery_attempt($1,$2,$3,$4)', [...fenced(job),id]);
   }
-  async fail(job: DiscoveryJob, id: string, category: 'auth' | 'invalid_input' | 'unavailable', code: 'MODEL_AUTH' | 'MODEL_UNAVAILABLE' | 'PROVIDER_INVALID_DATA') {
+  async fail(job: DiscoveryJob, id: string, category: 'auth' | 'invalid_input' | 'unavailable', code: 'MODEL_AUTH' | 'MODEL_RATE_LIMITED' | 'MODEL_UNAVAILABLE' | 'PROVIDER_INVALID_DATA') {
     await this.database.query("SELECT public.finish_discovery_attempt($1,$2,$3,$4,'error',false,$5,$6)", [...fenced(job),id,category,code]);
   }
   async putEvidence(job: DiscoveryJob, id: string, attemptId: string | null, value: unknown, client: Queryable = this.database) {
