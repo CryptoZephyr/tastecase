@@ -247,13 +247,13 @@ For the bounded Qloo → free model → runner check, see [live discovery verifi
 - Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
-- The hosted real-provider browser journey and a fresh production signup with email confirmation passed. Deliberate cold-start recovery, live hosted cancellation and restart, objective-rule browser failures and replay of a newly downloaded hosted pack are still untested.
+- The hosted real-provider browser journey and a fresh production signup with email confirmation passed. On 2026-10-25 the synthetic API cold start, service restart, queued-comparison cancellation and discovery cancellation were verified. A downloaded comparison pack passed its checksum check and replay made no Qloo calls, but free-model unavailability left three of four baseline and all four candidate replay repeats unavailable. Objective-rule browser failures remain untested.
 - Nobody has reviewed the latest pilot cards yet, so there's no measurement of whether Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## Roadmap
 
-- Verify deliberate hosted cold-start recovery, cancellation and objective-rule failures.
-- Replay a newly downloaded hosted pack.
+- Verify objective-rule browser failures in the hosted browser journey.
+- Repeat local replay of the downloaded hosted pack when the free model is available.
 - Find the cause of the intermittent hosted `PROVIDER_INVALID_DATA` on Qloo rank steps, and let the local runner keep claiming work after a single target timeout.
 - Measure whether Qloo-guided discovery finds more useful cases than ordinary generation.
 
