@@ -139,6 +139,7 @@ export function ConstraintStrip({ constraints, view }: { constraints: PracticalC
 export function FindingSummary({ view }: { view: CaseView }) {
   const [x, y] = view.contrast.entryIds;
   const paired = view.profiles.length > 1;
+  const hasAnySignalData = view.rankings.some(row => row.scope === 'full' && (row.affinities.length || row.entryTags.length));
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <section aria-labelledby="finding-title" className="rounded-panel border border-rule bg-surface p-4 md:p-5">
@@ -150,6 +151,59 @@ export function FindingSummary({ view }: { view: CaseView }) {
           {paired ? <>Qloo ranked <EntryChip id={x} /> above <EntryChip id={y} /> for Profile A, and the reverse for Profile B.</> : <>Qloo’s ranking placed <EntryChip id={x} /> above <EntryChip id={y} />.</>}
         </p>
         <p className="mt-3 text-control text-ink-2">This is a cultural contrast to investigate, not a failed test. It can’t become an automatic failure unless you write an explicit rule.</p>
+        <section aria-label="Qloo signals" className="mt-4 rounded-control border border-rule p-3">
+          <h3 className="text-control font-medium">Qloo signals</h3>
+          <div className="mt-2 space-y-3">
+            {view.profiles.map(profile => {
+              const ranking = view.rankings.find(row => row.profileId === profile && row.scope === 'full');
+              const affinityX = ranking?.affinities.find(row => row.entryId === x);
+              const affinityY = ranking?.affinities.find(row => row.entryId === y);
+              const tagsX = ranking?.entryTags.find(row => row.entryId === x)?.tags ?? [];
+              const tagsY = ranking?.entryTags.find(row => row.entryId === y)?.tags ?? [];
+              const tagKeys = new Set([...tagsX, ...tagsY].map(tag => `${tag.type}:${tag.name.toLowerCase()}`));
+              const uniqueX = new Set(tagsX.filter(tag => !tagsY.some(other => other.type === tag.type && other.name.toLowerCase() === tag.name.toLowerCase())).map(tag => `${tag.type}:${tag.name.toLowerCase()}`));
+              const uniqueY = new Set(tagsY.filter(tag => !tagsX.some(other => other.type === tag.type && other.name.toLowerCase() === tag.name.toLowerCase())).map(tag => `${tag.type}:${tag.name.toLowerCase()}`));
+              const label = view.profiles.length === 1 ? 'Case brief' : `Profile ${profile.toUpperCase()}`;
+              const affinityText = (entryId: string, entryAffinity: typeof affinityX) => `${entryFacts(view.catalog, entryId).name}: ${entryAffinity ? entryAffinity.affinity.toFixed(2) : 'unavailable'}`;
+              const interestText = [
+                ...(affinityX?.interests ?? []).map(interest =>
+                  `${entryFacts(view.catalog, x).name}: ${view.anchorLabels[interest.anchorConfirmationId] ?? 'Confirmed interest'} ${Math.round(interest.score * 100)}%`,
+                ),
+                ...(affinityY?.interests ?? []).map(interest =>
+                  `${entryFacts(view.catalog, y).name}: ${view.anchorLabels[interest.anchorConfirmationId] ?? 'Confirmed interest'} ${Math.round(interest.score * 100)}%`,
+                ),
+              ];
+              const renderTags = (entryId: string, tags: typeof tagsX, unique: Set<string>) => (
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="text-meta text-ink-2">{entryFacts(view.catalog, entryId).name}</span>
+                  {tags.map((tag, index) => {
+                    const key = `${tag.type}:${tag.name.toLowerCase()}`;
+                    return <span key={`${key}-${index}`} className="rounded-full border border-rule px-2 py-0.5 text-meta">{tag.name}{unique.has(key) ? ' · only on this side' : ''}</span>;
+                  })}
+                </div>
+              );
+              const hasSignals = Boolean(affinityX || affinityY || tagsX.length || tagsY.length);
+              return (
+                <div key={profile} className="space-y-1.5">
+                  <p className="text-meta font-medium">{label}</p>
+                  {hasSignals ? (
+                    <>
+                      <p className="text-control">
+                        Affinity: {affinityText(x, affinityX)} · {affinityText(y, affinityY)} · gap {affinityX && affinityY ? Math.abs(affinityX.affinity - affinityY.affinity).toFixed(2) : 'unavailable'}
+                      </p>
+                      {interestText.length ? (
+                        <p className="text-meta text-ink-2">Interest influence: {[...new Set(interestText)].join(' · ')}</p>
+                      ) : null}
+                      {tagKeys.size ? <div className="space-y-1">{renderTags(x, tagsX, uniqueX)}{renderTags(y, tagsY, uniqueY)}</div> : null}
+                    </>
+                  ) : hasAnySignalData ? <p className="text-meta text-ink-2">Qloo signals unavailable for this ranking.</p> : null}
+                </div>
+              );
+            })}
+            {!hasAnySignalData ? <p className="text-meta text-ink-2">Qloo signals unavailable for this ranking.</p> : null}
+          </div>
+          <p className="mt-2 text-meta text-ink-2">Advisory Qloo evidence. Scores are relative to this request and aren't a quality verdict.</p>
+        </section>
         <div className="mt-4 rounded-control bg-subtle p-3">
           <p className="text-meta text-ink-2">Proposed rationale (from discovery)</p>
           <p className="mt-1 text-control">{view.proposedRationale}</p>

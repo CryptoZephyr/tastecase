@@ -24,6 +24,8 @@ export interface RankingView {
   ordered: string[];
   missing: string[];
   unmapped: string[];
+  affinities: NonNullable<RankingEvidence['affinities']>;
+  entryTags: NonNullable<RankingEvidence['entryTags']>;
   capturedAt: string;
   checksum: string;
   errorCode?: string;
@@ -70,6 +72,7 @@ export interface CaseView {
   profiles: ProfileId[];
   briefs: Partial<Record<ProfileId, SyntheticText>>;
   anchors: Partial<Record<ProfileId, { id: string; label: string; kind: string; confirmed: boolean }[]>>;
+  anchorLabels: Record<string, string>;
   profileLabels: Partial<Record<ProfileId, string>>;
   contrastId: string;
   contrast: { entryIds: [string, string]; orders: Record<ProfileId, [string, string]> };
@@ -140,6 +143,7 @@ export function rankingViews(job: ViewJobDetail): RankingView[] {
   return job.evidence.flatMap(row => row.data.kind === 'rank' ? [{
     evidenceId: row.id, profileId: row.data.profileId, scope: row.data.scope, providerStatus: row.data.providerStatus,
     requested: row.data.requestedEntryIds, ordered: row.data.orderedEntryIds, missing: row.data.missingEntryIds, unmapped: row.data.unmappedEntryIds,
+    affinities: row.data.affinities ?? [], entryTags: row.data.entryTags ?? [],
     capturedAt: row.capturedAt, checksum: row.checksum, errorCode: 'error' in row.data ? row.data.error?.code : undefined,
   }] : []);
 }
@@ -162,6 +166,10 @@ export function buildCaseView(response: ViewCaseResponse, job: ViewJobDetail, at
     briefs,
     anchors: Object.fromEntries(request.profiles.map(profile => [profile.id, profile.anchors.map(anchor => ({
       id: anchor.id, label: anchor.label, kind: anchor.kind, confirmed: Boolean(anchor.confirmedEntityId) || confirmedAnchors.has(anchor.id) }))])),
+    anchorLabels: Object.fromEntries(job.confirmations.flatMap(confirmation => {
+      const anchor = request.profiles.flatMap(profile => profile.anchors).find(item => item.id === confirmation.anchorId);
+      return anchor ? [[confirmation.id, anchor.label]] : [];
+    })),
     profileLabels: Object.fromEntries(request.profiles.map(profile => [profile.id, profile.label])),
     contrastId: content.contrast.id,
     contrast: { entryIds: content.contrast.entryIds, orders: content.contrast.orders },

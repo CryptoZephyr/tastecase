@@ -52,6 +52,8 @@ test('Gate 2 SQL: immutable evidence, isolation, budgets, recovery and cancellat
     await client.query(migration); await client.query(migration);
     const httpMigration = await readFile(new URL('./migrations/202610180001_qloo_http_receipts.sql',import.meta.url),'utf8');
     await client.query(httpMigration); await client.query(httpMigration);
+    const explanationMigration = await readFile(new URL('./migrations/202610260001_qloo_rank_explanations.sql',import.meta.url),'utf8');
+    await client.query(explanationMigration); await client.query(explanationMigration);
     await client.query('INSERT INTO public.projects(id,owner_id,name) VALUES($1,$2,$3),($4,$5,$6)', [project,owner,'Synthetic discovery SQL',otherProject,otherOwner,'Other synthetic SQL']);
     await client.query('INSERT INTO public.catalog_versions(id,project_id,content,checksum,created_at) VALUES($1,$2,$3,$4,$5)', [catalogId,project,JSON.stringify(catalogPayload),checksum(catalogPayload),createdAt]);
     await client.query('INSERT INTO public.task_versions(id,project_id,catalog_version_id,content,checksum,created_at) VALUES($1,$2,$3,$4,$5,$6)', [taskId,project,catalogId,JSON.stringify(taskPayload),checksum(taskPayload),createdAt]);
@@ -137,6 +139,18 @@ test('Gate 2 SQL: immutable evidence, isolation, budgets, recovery and cancellat
       for(const http of invalid) {const bad={...data,http};await fails(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(bad),checksum(bad)]);}
       const unknownResponse={...data,http:{...receipt,requests:[{endpoint:'/entities',status:null,retryAfterSeconds:null}]}};
       await client.query(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(unknownResponse),checksum(unknownResponse)]);
+    });
+    await t.test('rank explanations accept bounded evidence and reject unknown tag types or extra keys',async()=>{
+      const anchorConfirmationId=(await client.query('SELECT id FROM public.discovery_anchor_confirmations WHERE project_id=$1 AND job_id=$2 AND anchor_id=$3',[project,job,anchorA])).rows[0].id as string;
+      const rank={kind:'rank',providerStatus:'ok',profileId:'a',scope:'full',requestedEntryIds:['one','two'],orderedEntryIds:['one','two'],missingEntryIds:[],unmappedEntryIds:['unmapped'],mappingConfirmationIds:mappingIds,anchorConfirmationIds:[anchorConfirmationId],
+        affinities:[{entryId:'one',affinity:0.82,interests:[{anchorConfirmationId,score:0.63}]}],
+        entryTags:[{entryId:'one',tags:[{type:'urn:tag:cuisine:qloo',name:'Synthetic cuisine'}]}],
+      };
+      await client.query(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(rank),checksum(rank)]);
+      const unknownType={...rank,entryTags:[{entryId:'one',tags:[{type:'urn:tag:unknown',name:'Synthetic cuisine'}]}]};
+      await fails(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(unknownType),checksum(unknownType)]);
+      const extraKey={...rank,entryTags:[{entryId:'one',tags:[{type:'urn:tag:cuisine:qloo',name:'Synthetic cuisine',extra:'Fixture'}]}]};
+      await fails(putEvidence,[project,job,lease,randomUUID(),JSON.stringify(extraKey),checksum(extraKey)]);
     });
     await t.test('immutable normalised evidence idempotence and checksum conflict; checkpoints cannot go backwards', async () => {
       for (const [index,profileId] of ['a','b'].entries()) {

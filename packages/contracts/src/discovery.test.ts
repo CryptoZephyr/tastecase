@@ -47,6 +47,23 @@ test('literal six-status vocabulary and malformed or extra ranking fields are re
   assert.equal(NormalizedDiscoveryEvidenceSchema.safeParse({...a,rawResponse:{private:'Synthetic'}}).success,false);
   assert.equal(NormalizedDiscoveryEvidenceSchema.safeParse({...a,orderedEntryIds:'one'}).success,false);
 });
+test('ranking explanations accept bounded mapped scores and reject out-of-scope or duplicate references',()=>{
+  const anchorConfirmationId=randomUUID();
+  const explained={...a,anchorConfirmationIds:[anchorConfirmationId],
+    affinities:[{entryId:'one',affinity:0.82,interests:[{anchorConfirmationId,score:0.63}]}],
+    entryTags:[{entryId:'one',tags:[{type:'urn:tag:cuisine:qloo',name:'  Synthetic cuisine  '}]}]};
+  const parsed=RankingEvidenceSchema.parse(explained);
+  assert.equal(parsed.entryTags?.[0]?.tags[0]?.name,'Synthetic cuisine');
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,affinities:[{...explained.affinities[0]!,affinity:1.01}]}).success,false);
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,entryTags:[{entryId:'one',tags:[{type:'urn:tag:unknown',name:'Unknown'}]}]}).success,false);
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,affinities:[{...explained.affinities[0]!,entryId:'outside'}]}).success,false);
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,affinities:[{entryId:'one',affinity:0.5,interests:[{anchorConfirmationId:randomUUID(),score:0.4}]}]}).success,false);
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,affinities:[...explained.affinities!,{...explained.affinities[0]!}]}).success,false);
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,affinities:[{entryId:'one',affinity:0.5,interests:[
+    {anchorConfirmationId,score:0.4},{anchorConfirmationId,score:0.3},
+  ]}]}).success,false);
+  assert.equal(RankingEvidenceSchema.safeParse({...explained,entryTags:[...explained.entryTags!,{...explained.entryTags[0]!}]}).success,false);
+});
 for(const [name,changes] of [
   ['duplicate ranked IDs',{orderedEntryIds:['one','one']}],['outside ranked IDs',{orderedEntryIds:['one','outside']}],
   ['unknown requested ID coverage',{orderedEntryIds:['one','two','other']}],['coverage omission',{missingEntryIds:[]}],

@@ -83,6 +83,39 @@ describe('case review', () => {
     expect(screen.queryByText('Profile B')).toBeNull();
   });
 
+  it('shows Qloo signals as unavailable when ranking evidence has no optional signal fields', () => {
+    render(<CaseReview view={buildCaseView(fx.caseResponse(), fx.jobDetail(), fx.attempts)} />);
+    expect(screen.getAllByText('Qloo signals unavailable for this ranking.').length).toBeGreaterThan(0);
+    expect(screen.getByText("Advisory Qloo evidence. Scores are relative to this request and aren't a quality verdict.")).toBeTruthy();
+  });
+
+  it('renders affinity, anchor influence and one-sided Qloo tags from ranking evidence', () => {
+    const job = fx.jobDetail();
+    const ranking = job.evidence.find(row => row.data.kind === 'rank' && row.data.profileId === 'a' && row.data.scope === 'full');
+    const confirmation = job.confirmations.find(row => row.anchorId === fx.ids.anchorA);
+    expect(ranking?.data.kind).toBe('rank');
+    expect(confirmation).toBeTruthy();
+    const enrichedJob = {
+      ...job,
+      evidence: job.evidence.map(row => row.id !== ranking?.id || row.data.kind !== 'rank' ? row : {
+        ...row,
+        data: {
+          ...row.data,
+          affinities: [
+            { entryId: 'fx-harbor', affinity: 0.82, interests: [{ anchorConfirmationId: confirmation!.id, score: 0.63 }] },
+            { entryId: 'fx-garden', affinity: 0.54, interests: [] },
+          ],
+          entryTags: [{ entryId: 'fx-harbor', tags: [{ type: 'urn:tag:cuisine:qloo' as const, name: 'Fixture cuisine' }] }],
+        },
+      }),
+    };
+    render(<CaseReview view={buildCaseView(fx.caseResponse(), enrichedJob, fx.attempts)} />);
+    expect(screen.getByText(/0\.82/)).toBeTruthy();
+    expect(screen.getByText(/gap 0\.28/)).toBeTruthy();
+    expect(screen.getByText(/Fixture Jazz Artist 63%/)).toBeTruthy();
+    expect(screen.getByText(/Fixture cuisine · only on this side/)).toBeTruthy();
+  });
+
   it('highlights a selected restaurant everywhere and states where it is absent', async () => {
     const user = userEvent.setup();
     const view = buildCaseView(fx.caseResponse(), fx.jobDetail(), fx.attempts);

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import { startCanonicalMcpServer, QlooWorkflowExecutionError } from '@qloo/qloo-harness';
-import { QlooHttpDiagnosticsSchema } from '@tastecase/contracts';
+import { QLOO_TAG_TYPES, QlooHttpDiagnosticsSchema } from '@tastecase/contracts';
 import { BoundedQlooClient, minimumDispatchGapMs, retryAfterSeconds } from './qloo-http.js';
 import { boundedMcpOptions } from './qloo-mcp.js';
 import { normalizeRank, normalizeResolution, QLOO_HOST, validateTools } from './qloo.js';
@@ -46,8 +46,9 @@ function rankRequest(): RankRequest {
     anchors: [{ entityId: anchor, confirmationId: randomUUID() }], unmappedEntryIds: [] };
 }
 function normalized(result: Record<string, unknown>, request = rankRequest()) {
-  const http = QlooHttpDiagnosticsSchema.parse((result._meta as { tastecaseHttp: unknown }).tastecaseHttp);
-  return normalizeRank({ ...(result.structuredContent as Record<string, unknown>), http }, request, 64000);
+  const meta = result._meta as { tastecaseHttp: unknown; tastecaseEntityTags: unknown };
+  const http = QlooHttpDiagnosticsSchema.parse(meta.tastecaseHttp);
+  return normalizeRank({ ...(result.structuredContent as Record<string, unknown>), http, entityTags: meta.tastecaseEntityTags }, request, 64000);
 }
 
 test('official canonical MCP batches eight cold ID checks into one documented request, then ranks', async () => {
@@ -59,13 +60,42 @@ test('official canonical MCP batches eight cold ID checks into one documented re
     const rank = normalized(result);
     assert.equal(rank.providerStatus, 'ok'); assert.equal(rank.orderedEntryIds.length, 7);
     assert.deepEqual(fixture.calls.map(url => url.pathname), ['/entities', '/v2/insights']);
+    assert.equal(fixture.calls[1]?.searchParams.get('feature.explainability'), 'true');
+    assert.equal(fixture.calls[0]?.searchParams.has('feature.explainability'), false);
     assert.deepEqual(new Set(fixture.calls[0]!.searchParams.get('entity_ids')!.split(',')), new Set([...options, anchor]));
+    const tags = (result._meta as { tastecaseEntityTags: unknown[] }).tastecaseEntityTags;
+    assert.equal(tags.length, options.length + 1); assert.ok(tags.every(row => (row as { tags: unknown[] }).tags.length === 0));
     assert.deepEqual(rank.http, { maxAttempts: 2, attempts: 2, cacheHits: 0, requests: [
       { endpoint: '/entities', status: 200, retryAfterSeconds: null }, { endpoint: '/v2/insights', status: 200, retryAfterSeconds: null },
     ] });
-    const repeat = normalized(await server.call('tools/call', { name: 'qloo_rank', arguments: { options, option_type: 'place', signals: [anchor] } }));
+    const repeatedResult = await server.call('tools/call', { name: 'qloo_rank', arguments: { options, option_type: 'place', signals: [anchor] } });
+    const repeat = normalized(repeatedResult);
     assert.equal(repeat.http?.attempts, 1); assert.equal(fixture.calls.length, 3);
+    assert.deepEqual((repeatedResult._meta as { tastecaseEntityTags: unknown[] }).tastecaseEntityTags, tags);
   } finally { server.close(); }
+});
+
+test('entity tags are filtered, normalised, deduplicated, capped and retained on cache hits', async () => {
+  const target = options[0]!; const rawTags = [
+    { type: QLOO_TAG_TYPES[0], name: '  Sushi  ', tag_id: 'fixture-one', value: 'Fixture value' },
+    { type: QLOO_TAG_TYPES[1], name: 'sUsHi' },
+    { type: 'urn:tag:unknown', name: 'Unknown type' },
+    { type: QLOO_TAG_TYPES[2], name: 'x'.repeat(81) },
+    ...Array.from({ length: 13 }, (_, index) => ({ type: QLOO_TAG_TYPES[index % QLOO_TAG_TYPES.length], name: `Tag ${index}` })),
+  ];
+  const fixture = fixtureRequest(url => url.pathname === '/entities'
+    ? json({ results: { entities: [{ ...entity(target), tags: rawTags }] } })
+    : undefined);
+  const client = new BoundedQlooClient(key, fixture.request);
+  const cold = await client.run('rank', () => client.entities([target]));
+  const expected = [{ entityId: target, tags: [
+    { type: QLOO_TAG_TYPES[0], name: 'Sushi' },
+    ...Array.from({ length: 11 }, (_, index) => ({ type: QLOO_TAG_TYPES[index % QLOO_TAG_TYPES.length], name: `Tag ${index}` })),
+  ] }];
+  assert.deepEqual(cold.entityTags, expected);
+  const warm = await client.run('rank', () => client.entities([target]));
+  assert.deepEqual(warm.entityTags, expected);
+  assert.equal(warm.http.cacheHits, 1); assert.equal(fixture.calls.length, 1);
 });
 
 test('a named describe still searches and validates details through the official resolver', async () => {
@@ -76,6 +106,7 @@ test('a named describe still searches and validates details through the official
     const resolution = normalizeResolution({ ...raw, http: (result._meta as { tastecaseHttp: unknown }).tastecaseHttp }, { id: randomUUID(), kind: 'music', label: `Fixture ${anchor}` }, 64000);
     assert.equal(resolution.providerStatus, 'ok'); assert.equal(resolution.candidates[0]?.entityId, anchor);
     assert.deepEqual(fixture.calls.map(url => url.pathname), ['/search', '/entities']);
+    assert.ok(fixture.calls.every(url => !url.searchParams.has('feature.explainability')));
   } finally { server.close(); }
 });
 

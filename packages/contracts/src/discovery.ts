@@ -96,6 +96,13 @@ export const DiscoveryAnchorConfirmationSchema = ConfirmDiscoveryAnchorRequestSc
 });
 /** Literal official status vocabulary. Adapter parsing must not accept a seventh status. */
 export const QlooStatusSchema = z.enum(['ok', 'empty', 'needs_input', 'partial', 'degraded', 'error']);
+export const QLOO_TAG_TYPES = [
+  'urn:tag:cuisine:qloo', 'urn:tag:genre:place', 'urn:tag:category:place',
+  'urn:tag:ambience:qloo', 'urn:tag:culinary_style:qloo',
+] as const;
+export const QlooTagSchema = z.strictObject({
+  type: z.enum(QLOO_TAG_TYPES), name: z.string().trim().min(1).max(80),
+});
 export const QlooHttpDiagnosticsSchema = z.strictObject({
   maxAttempts: z.literal(2), attempts: z.number().int().min(0).max(2), cacheHits: z.number().int().min(0).max(15),
   requests: z.array(z.strictObject({
@@ -112,15 +119,50 @@ export const RankingEvidenceSchema = z.strictObject({
   scope: z.enum(['full', 'reduced_pair']), requestedEntryIds: entryIds.min(1).max(10),
   orderedEntryIds: entryIds.max(10), missingEntryIds: entryIds.max(10), unmappedEntryIds: entryIds,
   mappingConfirmationIds: recordIds, anchorConfirmationIds: recordIds,
+  affinities: z.array(z.strictObject({
+    entryId: CatalogEntryIdSchema, affinity: z.number().min(0).max(1),
+    interests: z.array(z.strictObject({
+      anchorConfirmationId: IdSchema, score: z.number().min(0).max(1),
+    })).max(5),
+  })).max(10).optional(),
+  entryTags: z.array(z.strictObject({
+    entryId: CatalogEntryIdSchema, tags: z.array(QlooTagSchema).max(12),
+  })).max(10).optional(),
   error: NormalizedQlooErrorSchema.optional(),
   http: QlooHttpDiagnosticsSchema.optional(),
 }).superRefine((rank, ctx) => {
   const returned = new Set(rank.orderedEntryIds); const requested = new Set(rank.requestedEntryIds);
+  const anchors = new Set(rank.anchorConfirmationIds);
   if (rank.orderedEntryIds.some(id => !requested.has(id))
     || canonicalJson([...rank.missingEntryIds].sort()) !== canonicalJson(rank.requestedEntryIds.filter(id => !returned.has(id)).sort())
     || rank.unmappedEntryIds.some(id => requested.has(id))) ctx.addIssue({ code: 'custom', message: 'Rank coverage must partition requested mapped IDs' });
   if (['empty', 'needs_input', 'error'].includes(rank.providerStatus) && rank.orderedEntryIds.length) ctx.addIssue({ code: 'custom', message: 'This status cannot establish a ranking' });
   if (rank.providerStatus === 'error' && !rank.error) ctx.addIssue({ code: 'custom', message: 'Error status needs normalised error metadata' });
+  if (rank.affinities) {
+    const entries = new Set<string>();
+    rank.affinities.forEach((affinity, index) => {
+      if (entries.has(affinity.entryId) || !returned.has(affinity.entryId)) {
+        ctx.addIssue({ code: 'custom', path: ['affinities', index, 'entryId'], message: 'Affinity entries must be unique ranked entries' });
+      }
+      entries.add(affinity.entryId);
+      const interests = new Set<string>();
+      affinity.interests.forEach((interest, interestIndex) => {
+        if (interests.has(interest.anchorConfirmationId) || !anchors.has(interest.anchorConfirmationId)) {
+          ctx.addIssue({ code: 'custom', path: ['affinities', index, 'interests', interestIndex, 'anchorConfirmationId'], message: 'Interests must use unique request anchors' });
+        }
+        interests.add(interest.anchorConfirmationId);
+      });
+    });
+  }
+  if (rank.entryTags) {
+    const entries = new Set<string>();
+    rank.entryTags.forEach((entry, index) => {
+      if (entries.has(entry.entryId) || !requested.has(entry.entryId)) {
+        ctx.addIssue({ code: 'custom', path: ['entryTags', index, 'entryId'], message: 'Entity tags must use unique requested entries' });
+      }
+      entries.add(entry.entryId);
+    });
+  }
 });
 export const ResolutionEvidenceSchema = z.strictObject({
   kind: z.literal('resolve'), providerStatus: QlooStatusSchema, anchorId: IdSchema,

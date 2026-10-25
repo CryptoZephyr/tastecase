@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { join } from 'node:path';
 import {
-  IdSchema, QlooStatusSchema, RankingEvidenceSchema, ResolutionEvidenceSchema,
+  IdSchema, QlooStatusSchema, QlooTagSchema, RankingEvidenceSchema, ResolutionEvidenceSchema,
   NormalizedQlooErrorSchema, PublicAnchorSchema,
   QlooHttpDiagnosticsSchema,
 } from '@tastecase/contracts';
@@ -9,6 +9,9 @@ import type { PublicAnchor, RankRequest, ProviderContext, QlooAdapter } from './
 import { UnknownDispatch } from './types.js';
 
 export const QLOO_HOST = 'https://hackathon.api.qloo.com';
+export const QlooEntityTagsSchema = z.array(z.strictObject({
+  entityId: IdSchema, tags: z.array(QlooTagSchema).max(12),
+})).max(15).refine(values => new Set(values.map(value => value.entityId)).size === values.length, 'Duplicate entity tag rows');
 export function childEnvironment(key: string, home: string, inherited: readonly string[]): Record<string,string> {
   if (!key || !home) throw new TypeError('Qloo configuration required');
   return { ...Object.fromEntries(inherited.map(name => [name,''])),
@@ -53,9 +56,11 @@ const envelopeSchema = z.object({
   execution: z.strictObject({ transport: z.literal('mcp'), transport_name: z.string(), correlation_id: z.string(), duration_ms: z.number().finite().nonnegative() }),
   resolution: z.object({ issues: z.array(z.unknown()).max(10).optional() }).passthrough().optional(),
   http: QlooHttpDiagnosticsSchema.optional(),
+  entityTags: QlooEntityTagsSchema.optional(),
 }).passthrough();
 const rankedEntity = z.object({ entity_id: IdSchema, name: z.string().min(1).max(160), type: z.string().optional() }).passthrough();
 const candidateEntity = z.object({ id: IdSchema, name: z.string().trim().min(1).max(160), type: z.string() }).passthrough();
+const boundedScore = z.number().min(0).max(1);
 const transientCodes = new Set(['QLOO_DNS','QLOO_CONNECT','QLOO_TIMEOUT','QLOO_RATE_LIMIT','QLOO_UPSTREAM']);
 const safeCodes = new Set([...transientCodes,'QLOO_AUTH','QLOO_CONTRACT','QLOO_TLS','CANCELLED','HARNESS_INTERNAL','MCP_ADAPTER_FAILURE','RESOLVER_CONFIGURATION','RESOLVER_UNAVAILABLE']);
 function normalizedError(error: z.infer<typeof envelopeSchema>['error']) {
@@ -63,6 +68,28 @@ function normalizedError(error: z.infer<typeof envelopeSchema>['error']) {
   const code = safeCodes.has(error.code) ? error.code : 'QLOO_UNAVAILABLE';
   const category = code === 'QLOO_AUTH' ? 'auth' : transientCodes.has(code) ? 'transient' : code === 'QLOO_CONTRACT' ? 'invalid_input' : 'unavailable';
   return NormalizedQlooErrorSchema.parse({ code,category,retryable: error.retryable && category === 'transient' });
+}
+function explainedInterests(value: unknown, anchorConfirmations: Map<string, string>) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const explanation = (value as Record<string, unknown>).explainability;
+  if (!explanation || typeof explanation !== 'object' || Array.isArray(explanation)) return [];
+  const interests = (explanation as Record<string, unknown>)['signal.interests.entities'];
+  if (!Array.isArray(interests)) return [];
+  const mapped: { anchorConfirmationId: string; score: number }[] = [];
+  const seen = new Set<string>();
+  for (const value of interests) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const entityId = IdSchema.safeParse(row.entity_id);
+    const score = boundedScore.safeParse(row.score);
+    if (!entityId.success || !score.success) continue;
+    const anchorConfirmationId = anchorConfirmations.get(entityId.data.toLowerCase());
+    if (!anchorConfirmationId || seen.has(anchorConfirmationId)) continue;
+    seen.add(anchorConfirmationId);
+    mapped.push({ anchorConfirmationId, score: score.data });
+    if (mapped.length === 5) break;
+  }
+  return mapped;
 }
 export function parseEnvelope(value: unknown, operation: 'rank' | 'describe', outputBytes: number) {
   if (Buffer.byteLength(JSON.stringify(value)) > outputBytes) throw new TypeError('MCP result exceeds output budget');
@@ -81,18 +108,32 @@ export function normalizeRank(value: unknown, request: RankRequest, outputBytes:
   const entities = (envelope.results ?? []).map(value => rankedEntity.parse(value));
   const entityToEntry = new Map(request.options.map(option => [option.entityId.toLowerCase(), option.entryId]));
   if (entityToEntry.size !== request.options.length) throw new TypeError('Ambiguous duplicate mapped entities');
+  const anchorToConfirmation = new Map(request.anchors.map(anchor => [anchor.entityId.toLowerCase(), anchor.confirmationId]));
   const orderedEntryIds = entities.map(entity => {
-    const entry = entityToEntry.get(entity.entity_id);
+    const entry = entityToEntry.get(entity.entity_id.toLowerCase());
     if (entry === undefined) throw new TypeError('Outside ranked entity');
     if (entity.type && !['place','urn:entity:place','urn:entity'].includes(entity.type)) throw new TypeError('Rank returned non-place');
     return entry;
+  });
+  const affinities = entities.flatMap(entity => {
+    const entryId = entityToEntry.get(entity.entity_id.toLowerCase());
+    const affinity = boundedScore.safeParse(entity.affinity);
+    return entryId === undefined || !affinity.success ? [] : [{
+      entryId, affinity: affinity.data, interests: explainedInterests(entity, anchorToConfirmation),
+    }];
+  });
+  const entryTags = (envelope.entityTags ?? []).flatMap(entity => {
+    const entryId = entityToEntry.get(entity.entityId.toLowerCase());
+    return entryId === undefined || entity.tags.length === 0 ? [] : [{ entryId, tags: entity.tags }];
   });
   const error = normalizedError(envelope.error);
   return RankingEvidenceSchema.parse({ kind: 'rank',providerStatus: envelope.status,
     profileId: request.profileId,scope: request.scope,requestedEntryIds: request.options.map(option => option.entryId),orderedEntryIds,
     missingEntryIds: request.options.filter(option => !orderedEntryIds.includes(option.entryId)).map(option => option.entryId),
     unmappedEntryIds: request.unmappedEntryIds,mappingConfirmationIds: request.options.map(option => option.confirmationId),
-    anchorConfirmationIds: request.anchors.map(anchor => anchor.confirmationId),...(error ? {error} : {}),...(envelope.http ? {http:envelope.http} : {}),
+    anchorConfirmationIds: request.anchors.map(anchor => anchor.confirmationId),
+    ...(affinities.length ? {affinities} : {}),...(entryTags.length ? {entryTags} : {}),
+    ...(error ? {error} : {}),...(envelope.http ? {http:envelope.http} : {}),
   });
 }
 

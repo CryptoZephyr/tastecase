@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { computeDiscoveryFacts, RankingEvidenceSchema } from '@tastecase/contracts';
-import { childEnvironment, normalizeRank, normalizeResolution, parseEnvelope, validateTools, OfficialQlooAdapter, QLOO_HOST } from './qloo.js';
+import { childEnvironment, normalizeRank, normalizeResolution, parseEnvelope, validateTools, OfficialQlooAdapter, QlooEntityTagsSchema, QLOO_HOST } from './qloo.js';
 import { parseSelection, OpenRouterDecisionAdapter, boundedJson } from './decision.js';
 import { UnknownDispatch, type RankRequest } from './types.js';
 import { startDiscoveryWorker } from './main.js';
@@ -52,6 +52,33 @@ test('omissions retain provider status and mapped/unmapped coverage, never zero 
     {status:'ok',ordered:['one'],missing:['two'],unmapped:['unmapped']});
 });
 
+test('rank explanations map scores and request anchors, while malformed and unrelated signals are omitted',()=>{
+  const [first, second] = request.options;
+  const anchor = request.anchors[0]; assert.ok(first); assert.ok(second); assert.ok(anchor);
+  const raw = {
+    ...envelope('ok', [
+      { entity_id:first.entityId,name:'Synthetic One',affinity:0.82,explainability:{'signal.interests.entities':[
+        {entity_id:anchor.entityId,score:0.63},{entity_id:randomUUID(),score:0.99},{entity_id:anchor.entityId,score:0.2},
+      ]}},
+      { entity_id:second.entityId,name:'Synthetic Two',affinity:1.2,explainability:'malformed'},
+    ]),
+    entityTags:[
+      {entityId:first.entityId,tags:[{type:'urn:tag:cuisine:qloo',name:'Synthetic cuisine'}]},
+      {entityId:randomUUID(),tags:[{type:'urn:tag:cuisine:qloo',name:'Outside'}]},
+      {entityId:second.entityId,tags:[]},
+    ],
+  };
+  const rank = normalizeRank(raw,request,64000);
+  assert.deepEqual(rank.affinities,[{entryId:'one',affinity:0.82,interests:[{anchorConfirmationId:anchor.confirmationId,score:0.63}]}]);
+  assert.deepEqual(rank.entryTags,[{entryId:'one',tags:[{type:'urn:tag:cuisine:qloo',name:'Synthetic cuisine'}]}]);
+  const missing = normalizeRank(envelope('ok',[
+    {entity_id:first.entityId,name:'Synthetic One',explainability:{'signal.interests.entities':[{entity_id:anchor.entityId,score:0.8}]}},
+    {entity_id:second.entityId,name:'Synthetic Two',affinity:0.4,explainability:{broken:true}},
+  ]),request,64000);
+  assert.deepEqual(missing.affinities,[{entryId:'two',affinity:0.4,interests:[]}]);
+  assert.equal('entryTags' in missing,false);
+});
+
 test('successful official resolution metadata need not include ambiguity issues',()=>{
   const rank = normalizeRank({...envelope(),resolution:{status:'resolved',inputs:[]}},request,64000);
   assert.equal(rank.providerStatus,'ok'); assert.deepEqual(rank.orderedEntryIds,['one','two']);
@@ -74,6 +101,13 @@ test('outside, duplicate, non-place and malformed IDs are rejected',()=>{
     [{entity_id:first.entityId,name:'Wrong type',type:'movie'}],[{entity_id:'unknown',name:'Malformed'}] ]) {
     assert.throws(()=>normalizeRank(envelope('ok',results),request,64000));
   }
+});
+
+test('entity tag transport metadata is strict and bounded to fifteen entities',()=>{
+  const tag={type:'urn:tag:cuisine:qloo',name:'Fixture cuisine'};
+  assert.equal(QlooEntityTagsSchema.safeParse([{entityId:randomUUID(),tags:[tag]}]).success,true);
+  assert.equal(QlooEntityTagsSchema.safeParse([{entityId:randomUUID(),tags:[tag],extra:'Fixture'}]).success,false);
+  assert.equal(QlooEntityTagsSchema.safeParse(Array.from({length:16},()=>({entityId:randomUUID(),tags:[tag]}))).success,false);
 });
 
 test('only official flagged transient errors retry; auth and arbitrary codes cannot',()=>{
