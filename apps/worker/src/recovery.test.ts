@@ -181,7 +181,7 @@ test('weak affinity reversals stop with the specific no-useful-contrast reason',
     assert.equal(saved.job.state,'no_useful_contrast');assert.equal(saved.job.reason,reason);assert.ok(reason.length<=2000);
     assert.equal(fake.decisions,0);assert.equal(saved.targets.length,0);assert.equal(fake.calls.length,2);
     const facts=saved.evidence.find(evidence=>evidence.data.kind==='facts')?.data;
-    assert.equal(facts?.kind,'facts');if (facts?.kind==='facts') assert.equal(facts.contrasts.length,0);
+    assert.equal(facts?.kind,'facts');if (facts?.kind==='facts') assert.equal(facts.contrasts.length,1);
   } finally {await f.close();}
 });
 

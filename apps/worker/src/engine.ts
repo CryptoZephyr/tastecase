@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
 import {
-  canonicalJson, checksum, computeDiscoveryFacts, discoveryAttemptId, validateModelContrastDecision,
+  canonicalJson, checksum, computeDiscoveryFacts, discoveryAttemptId, isWeakContrast, validateModelContrastDecision,
   RankingEvidenceSchema, ResolutionEvidenceSchema, ComputedDiscoveryFactsSchema, validateDiscoveryCandidate,
   NormalizedDiscoveryEvidenceSchema, type NormalizedDiscoveryEvidence, type ComputedDiscoveryFacts,
 } from '@tastecase/contracts';
@@ -229,9 +229,13 @@ async function execute(store: DiscoveryStore, initial: Snapshot, qloo: QlooAdapt
   }
   const facts = ComputedDiscoveryFactsSchema.parse(snapshot.evidence.find(evidence=>evidence.data.kind==='facts')?.data);
   if (facts.unsupportedReason) throw new StopWork('unavailable','Provider status does not support software-computed order contrasts. Coverage remains recorded.');
-  if (!facts.contrasts.length) throw new StopWork('no_useful_contrast','No supported order reversal was observed among jointly covered fixed-catalog options after skipping reversals whose Qloo affinity gaps were under 0.01 for both profiles. Missing coverage is not negative preference.');
+  if (!facts.contrasts.length) throw new StopWork('no_useful_contrast','No supported order reversal was observed among jointly covered fixed-catalog options. Missing coverage is not negative preference.');
+  const rankA = RankingEvidenceSchema.parse(evidenceFor(snapshot,'rank:full:a')?.data);
+  const rankB = RankingEvidenceSchema.parse(evidenceFor(snapshot,'rank:full:b')?.data);
+  const selectable = {...facts,contrasts:facts.contrasts.filter(contrast=>!isWeakContrast(contrast,rankA,rankB))};
+  if (!selectable.contrasts.length) throw new StopWork('no_useful_contrast','No supported order reversal was observed among jointly covered fixed-catalog options after skipping reversals whose Qloo affinity gaps were under 0.01 for both profiles. Missing coverage is not negative preference.');
   if (snapshot.job.checkpoint==='ranks') {
-    const evidence = await call('select','model',facts,async context=>validateModelContrastDecision(await decision.select(facts,context),facts));
+    const evidence = await call('select','model',selectable,async context=>validateModelContrastDecision(await decision.select(selectable,context),selectable));
     await store.advance(snapshot.job,{state:'running_target',checkpoint:3,evidenceIds:[evidence.id]}); await reload();
   }
   const selection = evidenceFor(snapshot,'select');

@@ -264,10 +264,6 @@ export function computeDiscoveryFacts(jobId: string, evidenceIds: [string, strin
       if (first === undefined || second === undefined) continue;
       const bi = b.orderedEntryIds.indexOf(first); const bj = b.orderedEntryIds.indexOf(second);
       if (bi < 0 || bj < 0 || bi < bj) continue;
-      const gapA = rawAffinityGap(a, first, second);
-      const gapB = rawAffinityGap(b, first, second);
-      if (gapA !== undefined && gapB !== undefined
-        && gapA < MIN_CONTRAST_AFFINITY_GAP && gapB < MIN_CONTRAST_AFFINITY_GAP) continue;
       contrasts.push({ id: discoveryAttemptId(jobId, `contrast:${checksum([first, second])}`, 0), entryIds: [first, second], orders: { a: [first, second], b: [second, first] } });
     }
   }
@@ -275,6 +271,15 @@ export function computeDiscoveryFacts(jobId: string, evidenceIds: [string, strin
     missingEntryIds: [...new Set([...a.missingEntryIds, ...b.missingEntryIds])], unmappedEntryIds: a.unmappedEntryIds,
     ...([a, b].some(rank => !['ok', 'partial'].includes(rank.providerStatus)) ? { unsupportedReason: 'provider_unavailable' } : {}),
   });
+}
+/** Facts stay a pure, versionless record of every reversal so pinned historical evidence keeps validating. Selection applies this filter. */
+export function isWeakContrast(contrast: z.infer<typeof ContrastFactSchema>, a: RankingEvidence, b: RankingEvidence): boolean {
+  const [first, second] = contrast.entryIds;
+  const gapA = rawAffinityGap(a, first, second);
+  const gapB = rawAffinityGap(b, first, second);
+  const tolerance = 1e-9;
+  return gapA !== undefined && gapB !== undefined
+    && gapA < MIN_CONTRAST_AFFINITY_GAP - tolerance && gapB < MIN_CONTRAST_AFFINITY_GAP - tolerance;
 }
 export function validateModelContrastDecision(value: unknown, facts: ComputedDiscoveryFacts): ModelContrastDecision {
   const decision = ModelContrastDecisionSchema.parse(value);
