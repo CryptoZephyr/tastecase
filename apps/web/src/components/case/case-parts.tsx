@@ -154,7 +154,7 @@ export function FindingSummary({ view }: { view: CaseView }) {
         <section aria-label="Qloo signals" className="mt-4 rounded-control border border-rule p-3">
           <h3 className="text-control font-medium">Qloo signals</h3>
           <div className="mt-2 space-y-3">
-            {view.profiles.map(profile => {
+            {hasAnySignalData ? view.profiles.map(profile => {
               const ranking = view.rankings.find(row => row.profileId === profile && row.scope === 'full');
               const affinityX = ranking?.affinities.find(row => row.entryId === x);
               const affinityY = ranking?.affinities.find(row => row.entryId === y);
@@ -196,11 +196,10 @@ export function FindingSummary({ view }: { view: CaseView }) {
                       ) : null}
                       {tagKeys.size ? <div className="space-y-1">{renderTags(x, tagsX, uniqueX)}{renderTags(y, tagsY, uniqueY)}</div> : null}
                     </>
-                  ) : hasAnySignalData ? <p className="text-meta text-ink-2">Qloo signals unavailable for this ranking.</p> : null}
+                  ) : <p className="text-meta text-ink-2">Qloo signals unavailable for this ranking.</p>}
                 </div>
               );
-            })}
-            {!hasAnySignalData ? <p className="text-meta text-ink-2">Qloo signals unavailable for this ranking.</p> : null}
+            }) : <p className="text-meta text-ink-2">Qloo signals unavailable for this ranking.</p>}
           </div>
           <p className="mt-2 text-meta text-ink-2">Advisory Qloo evidence. Scores are relative to this request and aren't a quality verdict.</p>
         </section>

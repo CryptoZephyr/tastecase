@@ -85,7 +85,9 @@ describe('case review', () => {
 
   it('shows Qloo signals as unavailable when ranking evidence has no optional signal fields', () => {
     render(<CaseReview view={buildCaseView(fx.caseResponse(), fx.jobDetail(), fx.attempts)} />);
-    expect(screen.getAllByText('Qloo signals unavailable for this ranking.').length).toBeGreaterThan(0);
+    const signals = screen.getByRole('region', { name: 'Qloo signals' });
+    expect(within(signals).getByText('Qloo signals unavailable for this ranking.')).toBeTruthy();
+    expect(within(signals).queryByText('Profile A')).toBeNull();
     expect(screen.getByText("Advisory Qloo evidence. Scores are relative to this request and aren't a quality verdict.")).toBeTruthy();
   });
 
