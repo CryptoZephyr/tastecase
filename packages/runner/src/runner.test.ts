@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ClaimAttemptResponseSchema, CreateCatalogVersionRequestSchema, CreateTaskVersionRequestSchema,
-  RunnerHandshakeRequestSchema, SCHEMA_VERSION, TargetInputSchema, TargetResultSchema,
+  NormalizedTraceSchema, RunnerHandshakeRequestSchema, SCHEMA_VERSION, TargetInputSchema, TargetResultSchema, TraceEventSchema,
   UploadTargetResultRequestSchema, checksum, type ClaimAttemptResponse, type TargetAdapter, type TargetResult,
 } from '@tastecase/contracts';
 import {
@@ -49,6 +49,32 @@ function mockApi(options: { claim?: ClaimAttemptResponse | null; upload?: Respon
     if (options.upload) return options.upload;
     const upload = UploadTargetResultRequestSchema.parse(body);
     return json({ schema_version: SCHEMA_VERSION, attemptId: id(7), status: 'completed', resultChecksum: checksum(upload.result), idempotent: false });
+  };
+  return { requests, fetch, client: new RunnerClient({ env, fetch }) };
+}
+function queuedClaim(attemptNumber: number): ClaimAttemptResponse {
+  const claim = syntheticClaim();
+  return ClaimAttemptResponseSchema.parse({ ...claim, attemptId: id(attemptNumber), leaseId: id(attemptNumber + 100) });
+}
+function mockQueueApi(claims: ClaimAttemptResponse[]) {
+  const requests: RequestLog[] = [];
+  let claimIndex = 0;
+  const fetch: Fetch = async (url, init) => {
+    const body: unknown = JSON.parse(String(init?.body));
+    const path = new URL(String(url)).pathname;
+    requests.push({ url: String(url), init: init ?? {}, body });
+    if (path.endsWith('/runner/handshake')) return json(handshake);
+    if (path.endsWith('/runner/claims')) {
+      const claim = claims[claimIndex++];
+      return claim ? json(claim) : new Response(null, { status: 204 });
+    }
+    if (path.endsWith('/results')) {
+      const upload = UploadTargetResultRequestSchema.parse(body);
+      const attemptId = path.split('/').at(-2);
+      if (!attemptId) throw new Error('Missing synthetic attempt ID');
+      return json({ schema_version: SCHEMA_VERSION, attemptId, status: 'completed', resultChecksum: checksum(upload.result), idempotent: false });
+    }
+    throw new Error('Unexpected synthetic API request');
   };
   return { requests, fetch, client: new RunnerClient({ env, fetch }) };
 }
@@ -418,7 +444,8 @@ test('LiteLLM default nova-micro sends only synthetic task and eligible facts, n
   assert.equal(response.result.outcome, 'success');
   assert.deepEqual(response.usage, { promptTokens: 13, completionTokens: 7, totalTokens: 20 });
   assert.equal(response.result.trace.completeness, 'partial');
-  assert.equal(response.result.trace.events.length, 2);
+  assert.deepEqual(response.result.trace.events.map(event => event.kind), ['target_started', 'target_completed']);
+  assert.equal(response.result.trace.events[0]?.name, response.result.trace.events[1]?.name);
   assert.equal(JSON.stringify(response).includes(key) || JSON.stringify(local).includes(key), false);
 });
 
@@ -620,14 +647,157 @@ test('OpenRouter failures are one dispatch with safe auth, rate-limit and malfor
   assert.equal(result.outcome,'malformed_output');assert.equal(JSON.stringify(result).includes(key)||JSON.stringify(result).includes(token),false);
 });
 
+test('trace contracts accept several target completion events in one result', () => {
+  const events = [
+    { kind: 'target_completed', name: metadata.name, timestamp: '2026-01-01T00:00:00.000Z', durationMs: 10, status: 'unavailable' },
+    { kind: 'target_completed', name: metadata.name, timestamp: '2026-01-01T00:00:01.000Z', durationMs: 20, status: 'ok' },
+  ] as const;
+  assert.equal(TraceEventSchema.safeParse(events[0]).success, true);
+  assert.equal(NormalizedTraceSchema.safeParse({ completeness: 'partial', events }).success, true);
+  assert.equal(TargetResultSchema.safeParse({ ...success, trace: { completeness: 'partial', events } }).success, true);
+});
+
+test('provider retry records each HTTP dispatch and reuses the exact request body', async () => {
+  const bodies: string[] = [];
+  let calls = 0;
+  const local = createLiteLLMAdapter({
+    env, providerRetries: 1, sleep: async () => {},
+    fetch: async (_url, init) => {
+      bodies.push(String(init?.body));
+      calls++;
+      return calls === 1 ? new Response(null, { status: 429 }) : completion('{"recommendations":[]}');
+    },
+  });
+  const result = await local.run(syntheticClaim().input, context());
+  assert.equal(result.outcome, 'success');
+  assert.equal(calls, 2);
+  assert.equal(bodies[0], bodies[1]);
+  assert.deepEqual(result.trace.events.map(event => [event.kind, event.status]), [
+    ['target_started', undefined], ['target_completed', 'unavailable'],
+    ['target_started', undefined], ['target_completed', 'ok'],
+  ]);
+  assert.equal(result.trace.events.length, 4);
+});
+
+test('maximum provider retries stay within the trace event cap', async () => {
+  let calls = 0;
+  const local = createLiteLLMAdapter({
+    env, providerRetries: 2, sleep: async () => {},
+    fetch: async () => ++calls < 3 ? new Response(null, { status: 429 }) : completion('{"recommendations":[]}'),
+  });
+  const result = await local.run(syntheticClaim().input, context());
+  assert.equal(result.outcome, 'success');
+  assert.equal(result.trace.events.length, 6);
+  assert.equal(NormalizedTraceSchema.safeParse(result.trace).success, true);
+});
+
+test('Retry-After is honored in seconds and capped at ten seconds', async () => {
+  const waits: number[] = [];
+  let calls = 0;
+  const local = createLiteLLMAdapter({
+    env, providerRetries: 1, sleep: async milliseconds => { waits.push(milliseconds); },
+    fetch: async () => ++calls === 1
+      ? new Response(null, { status: 503, headers: { 'Retry-After': '30' } })
+      : completion('{"recommendations":[]}'),
+  });
+  assert.equal((await local.run(syntheticClaim().input, context())).outcome, 'success');
+  assert.equal(calls, 2);
+  assert.deepEqual(waits, [10_000]);
+});
+
+test('missing Retry-After uses two seconds then five seconds', async () => {
+  const waits: number[] = [];
+  let calls = 0;
+  const local = createLiteLLMAdapter({
+    env, providerRetries: 2, sleep: async milliseconds => { waits.push(milliseconds); },
+    fetch: async () => {
+      calls++;
+      return calls < 3 ? new Response(null, { status: calls === 1 ? 502 : 504 }) : completion('{"recommendations":[]}');
+    },
+  });
+  assert.equal((await local.run(syntheticClaim().input, context())).outcome, 'success');
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [2_000, 5_000]);
+});
+
+test('provider retries are opt-in and other HTTP statuses are never retried', async () => {
+  const noRetryWaits: number[] = [];
+  let noRetryCalls = 0;
+  const rateLimited = createLiteLLMAdapter({ env, fetch: async () => { noRetryCalls++; return new Response(null, { status: 429 }); }, sleep: async ms => { noRetryWaits.push(ms); } });
+  assert.equal((await rateLimited.run(syntheticClaim().input, context())).outcome, 'provider_unavailable');
+  assert.equal(noRetryCalls, 1);
+  assert.deepEqual(noRetryWaits, []);
+  for (const status of [401, 402, 403, 418, 500, 501, 505]) {
+    let calls = 0;
+    const local = createLiteLLMAdapter({ env, providerRetries: 2, fetch: async () => { calls++; return new Response(null, { status }); }, sleep: async () => {} });
+    assert.equal((await local.run(syntheticClaim().input, context())).outcome, 'provider_unavailable');
+    assert.equal(calls, 1);
+  }
+});
+
+test('network errors and redirects are never retried', async () => {
+  for (const response of ['network', 'redirect'] as const) {
+    let calls = 0;
+    const local = createLiteLLMAdapter({
+      env, providerRetries: 2, sleep: async () => {},
+      fetch: async () => {
+        calls++;
+        if (response === 'network') throw new TypeError('Synthetic network failure');
+        return new Response(null, { status: 302, headers: { Location: 'https://redirect.example.test' } });
+      },
+    });
+    assert.equal((await local.run(syntheticClaim().input, context())).outcome, 'provider_unavailable');
+    assert.equal(calls, 1);
+  }
+});
+
+test('timeouts are not retried and retries stop when the delay plus margin misses the deadline', async () => {
+  let timeoutCalls = 0;
+  const timeout = createLiteLLMAdapter({
+    env, providerRetries: 2, providerTimeoutMs: 10,
+    fetch: async () => { timeoutCalls++; return new Promise<Response>(() => {}); },
+    sleep: async () => { throw new Error('Timeout must not sleep'); },
+  });
+  const timedOut = await timeout.run(syntheticClaim().input, context());
+  assert.equal(timedOut.outcome, 'provider_unavailable');
+  assert.equal(timeoutCalls, 1);
+  if (timedOut.outcome === 'provider_unavailable') assert.equal(timedOut.error.code, 'provider_timeout');
+
+  let deadlineCalls = 0;
+  const waits: number[] = [];
+  const deadline = createLiteLLMAdapter({
+    env, providerRetries: 1, providerTimeoutMs: 2_500,
+    fetch: async () => { deadlineCalls++; return new Response(null, { status: 429 }); },
+    sleep: async milliseconds => { waits.push(milliseconds); },
+  });
+  assert.equal((await deadline.run(syntheticClaim().input, context())).outcome, 'provider_unavailable');
+  assert.equal(deadlineCalls, 1);
+  assert.deepEqual(waits, []);
+});
+
+test('invalid envelopes and malformed output are not retried', async () => {
+  for (const response of [json({ choices: [] }), completion('not JSON')]) {
+    let calls = 0;
+    const local = createLiteLLMAdapter({ env, providerRetries: 2, fetch: async () => { calls++; return response; }, sleep: async () => {} });
+    await local.run(syntheticClaim().input, context());
+    assert.equal(calls, 1);
+  }
+});
+
+test('provider retries reject values outside zero through two', () => {
+  for (const providerRetries of [-1, 3, 1.5, NaN]) {
+    assert.throws(() => createLiteLLMAdapter({ env, providerRetries }), { code: 'configuration_error' });
+  }
+});
+
 test('CLI run-once uses the default OpenRouter adapter for claim, dispatch and upload', async () => {
-  const api=mockApi();const lines:string[]=[];let modelCalls=0;
+  const api=mockApi();const lines:string[]=[];let modelCalls=0;const bodies:string[]=[];
   const fetch:Fetch=async(url,init)=>{
-    if(String(url).startsWith('https://openrouter.ai/')){modelCalls++;return completion('{"recommendations":[{"catalogEntryId":"synthetic-cafe","name":"Synthetic Cafe"}]}');}
+    if(String(url).startsWith('https://openrouter.ai/')){modelCalls++;bodies.push(String(init?.body));return modelCalls===1?new Response(null,{status:503}):completion('{"recommendations":[{"catalogEntryId":"synthetic-cafe","name":"Synthetic Cafe"}]}');}
     return api.fetch(url,init);
   };
-  assert.equal(await runCli(['run-once'],{env:{...env,OPENROUTER_API_KEY:key},fetch,write:line=>lines.push(line)}),0);
-  assert.equal(modelCalls,1);assert.equal(api.requests.length,3);
+  assert.equal(await runCli(['run-once','--provider-retries','1'],{env:{...env,OPENROUTER_API_KEY:key},fetch,write:line=>lines.push(line)}),0);
+  assert.equal(modelCalls,2);assert.equal(bodies[0],bodies[1]);assert.equal(api.requests.length,3);
   assert.equal(JSON.parse(lines[0]).outcome,'success');
   assert.equal(lines.join('').includes(key)||lines.join('').includes(token),false);
 });
@@ -640,6 +810,85 @@ test('CLI run-once prints no target/raw text or pending result and returns no-wo
     assert.equal((JSON.parse(lines[0]) as { status: string }).status, claim ? 'completed' : 'no_work');
     for (const forbidden of [token, key, 'Fictional preference', 'Outside Synthetic Cafe']) assert.equal(lines.join('\n').includes(forbidden), false);
   }
+});
+
+test('CLI run drains uploaded outcomes through a target timeout and reports all outcome counts', async () => {
+  const api = mockQueueApi([queuedClaim(21), queuedClaim(22), queuedClaim(23)]);
+  const lines: string[] = [];
+  const malformedResult = TargetResultSchema.parse({
+    schema_version: SCHEMA_VERSION, outcome: 'malformed_output', rawText: 'PRIVATE_TARGET_TEXT',
+    error: { code: 'invalid_target_output', message: 'Invalid synthetic output.' }, trace: { completeness: 'partial', events: [] },
+  });
+  let adapterCalls = 0;
+  const local = adapter(async () => {
+    adapterCalls++;
+    if (adapterCalls === 2) return new Promise<TargetResult>(() => {});
+    return adapterCalls === 3 ? malformedResult : success;
+  });
+  const code = await runCli(['run', '--target-timeout-ms', '15'], { env, fetch: api.fetch, adapter: local, write: line => lines.push(line) });
+  assert.equal(code, 4);
+  assert.equal(adapterCalls, 3);
+  assert.equal(api.requests.filter(request => request.url.endsWith('/results')).length, 3);
+  assert.equal(lines.length, 4);
+  const summary = JSON.parse(lines[3] ?? '') as { status: string; attempts: number; outcomes: Record<string, number> };
+  assert.deepEqual(summary, { status: 'drained', attempts: 3, outcomes: { success: 1, malformed_output: 1, provider_unavailable: 1 } });
+  for (const line of lines.slice(0, 3)) assert.equal((JSON.parse(line) as { status: string }).status, 'completed');
+  assert.equal(lines.join('\n').includes('pendingUpload') || lines.join('\n').includes('PRIVATE_TARGET_TEXT'), false);
+});
+
+test('CLI run stops on revoked credentials with exit 3', async () => {
+  const lines: string[] = [];
+  const code = await runCli(['run'], { env, fetch: async () => apiError('credential_revoked', 401), adapter: adapter(), write: line => lines.push(line) });
+  assert.equal(code, 3);
+  assert.deepEqual(JSON.parse(lines[0] ?? ''), { status: 'credential_revoked', attempts: 0, outcomes: { success: 0, malformed_output: 0, provider_unavailable: 0 } });
+});
+
+test('CLI run stops at max attempts with exit 6', async () => {
+  const api = mockQueueApi([queuedClaim(31), queuedClaim(32)]);
+  const lines: string[] = [];
+  const code = await runCli(['run', '--max-attempts', '2'], { env, fetch: api.fetch, adapter: adapter(), write: line => lines.push(line) });
+  assert.equal(code, 6);
+  assert.deepEqual(JSON.parse(lines.at(-1) ?? ''), { status: 'attempt_limit', attempts: 2, outcomes: { success: 2, malformed_output: 0, provider_unavailable: 0 } });
+  assert.equal(api.requests.filter(request => request.url.endsWith('/runner/claims')).length, 2);
+});
+
+test('CLI run observes abort between uploaded attempts', async () => {
+  const api = mockQueueApi([queuedClaim(41), queuedClaim(42)]);
+  const controller = new AbortController();
+  const lines: string[] = [];
+  const code = await runCli(['run'], {
+    env, fetch: api.fetch, adapter: adapter(), signal: controller.signal,
+    write: line => {
+      lines.push(line);
+      if ((JSON.parse(line) as { status?: string }).status === 'completed') controller.abort();
+    },
+  });
+  assert.equal(code, 1);
+  assert.deepEqual(JSON.parse(lines.at(-1) ?? ''), { status: 'failed', attempts: 1, outcomes: { success: 1, malformed_output: 0, provider_unavailable: 0 } });
+  assert.equal(api.requests.filter(request => request.url.endsWith('/runner/claims')).length, 1);
+});
+
+test('CLI run exits zero after an immediate no-work claim', async () => {
+  const api = mockQueueApi([]);
+  const lines: string[] = [];
+  assert.equal(await runCli(['run'], { env, fetch: api.fetch, adapter: adapter(), write: line => lines.push(line) }), 0);
+  assert.deepEqual(JSON.parse(lines[0] ?? ''), { status: 'drained', attempts: 0, outcomes: { success: 0, malformed_output: 0, provider_unavailable: 0 } });
+  assert.equal(lines.length, 1);
+});
+
+test('CLI provider retry and max-attempt arguments are command-scoped and bounded', async () => {
+  const cases = [
+    ['run-once', '--provider-retries', '3'],
+    ['run', '--provider-retries', '3'],
+    ['replay', '--provider-retries', '3'],
+    ['handshake', '--provider-retries', '1'],
+    ['run-once', '--max-attempts', '2'],
+    ['replay', '--max-attempts', '2'],
+    ['handshake', '--max-attempts', '2'],
+    ['run', '--max-attempts', '0'],
+    ['run', '--max-attempts', '121'],
+  ];
+  for (const args of cases) assert.equal(await runCli(args, { env, write: () => {} }), 1);
 });
 
 test('CLI revocation/unavailability are clear exit statuses without raw errors', async () => {

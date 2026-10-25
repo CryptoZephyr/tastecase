@@ -45,9 +45,10 @@ After building:
 node packages/runner/dist/cli.js --help
 node packages/runner/dist/cli.js handshake
 node packages/runner/dist/cli.js run-once
+node packages/runner/dist/cli.js run --max-attempts 20
 ```
 
-The default model is pinned to `nvidia/nemotron-3.5-super-vl:free` at `https://openrouter.ai/api/v1/chat/completions`. Requests require JSON, disable reasoning so the 4096-token output budget goes to the JSON answer, and cap output at 4096 tokens. Requests also disable provider fallback and enforce zero prompt/completion/request price ceilings. There is no paid fallback or automatic provider retry. Provider unavailability is visible, not an empty recommendation success. [Free-tier limits](https://openrouter.ai/docs/api/reference/limits) are shared across free models: 20 requests/minute and 50/day for an account with fewer than $10 in purchased credits. Discovery, comparison and replay all consume requests; budget them together. Free availability is not guaranteed.
+The default model is pinned to `nvidia/nemotron-3.5-super-vl:free` at `https://openrouter.ai/api/v1/chat/completions`. Requests require JSON, disable reasoning so the 4096-token output budget goes to the JSON answer, and cap output at 4096 tokens. Requests also disable provider fallback and enforce zero prompt/completion/request price ceilings. There is no paid fallback. Provider retries are disabled by default. `--provider-retries N` allows up to two retries for provider HTTP 429, 502, 503 or 504 responses only, within the original target deadline. Timeouts, network errors, redirects, invalid responses and malformed output are never retried. Uploads are never retried. Provider unavailability is visible, not an empty recommendation success. [Free-tier limits](https://openrouter.ai/docs/api/reference/limits) are shared across free models: 20 requests/minute and 50/day for an account with fewer than $10 in purchased credits. Discovery, comparison and replay all consume requests; budget them together. Free availability is not guaranteed.
 
 Baseline and Candidate can use this same model with different locally configured prompts or settings. The release label only attests that configuration; changing the label alone does not change the prompt. Custom adapters stay local.
 
@@ -55,7 +56,9 @@ The old OpenAI-compatible adapter remains available only by explicitly setting `
 
 For a loopback development API, add `--allow-loopback-http`. External HTTP and all redirects are rejected. Never pass tokens or keys as CLI arguments. Handshake needs no provider key and makes no target call.
 
-`run-once` handshakes, claims at most one attempt, invokes the local adapter once and uploads the result with the same attempt/lease identity. A 204 claim means no work. There is no background daemon or blind target-call retry.
+`run-once` handshakes, claims at most one attempt, invokes the local adapter once and uploads the result with the same attempt/lease identity. A 204 claim means no work. `run` uses the same flags and one client/adapter to claim and upload repeatedly until there is no work or the attempt limit is reached. Its default limit is 20 uploaded attempts, configurable from 1 to 120 with `--max-attempts`. A provider-unavailable result still counts as an uploaded attempt and does not stop the drain. There is no background daemon.
+
+`run` exits with code 6 when it reaches its attempt limit. A drained run exits with code 4 if any uploaded result was provider-unavailable, otherwise 0. Credential revocation or an unauthorized response exits 3, lease expiry exits 5, API/network unavailability exits 4, and other failures or cancellation exit 1.
 
 For comparison work, configure the intended adapter and bind its exact release label. Unbound or wrong-label runners cannot claim those slots; the label does not select a model automatically. The [comparison/replay guide](comparison.md) documents private pack/report exports and `replay --pack LOCAL.json --role candidate --pack-checksum SHA256 --report NEW.json`. Offline replay needs local provider configuration but no API/owner/runner credentials, and runs only the selected role.
 

@@ -302,18 +302,20 @@ test('CLI tampering before real LiteLLM mock transport and no release-to-model m
 
 test('default OpenRouter replay validates the pack before dispatch and uses the free model for the selected role', async () => {
   const { pack, path } = await packFile();let calls=0;
+  const bodies: string[] = [];
   const providerEnv={OPENROUTER_API_KEY:'synthetic-openrouter-local-key',TASTECASE_ASSISTANT_VERSION:'release-after'};
   const fetch:typeof globalThis.fetch=async(url,request)=>{
-    calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');
+    calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');bodies.push(String(request?.body));
     const body=JSON.parse(String(request?.body)) as Record<string,unknown>;
     assert.equal(body.model,'nvidia/nemotron-3.5-super-vl:free');
     assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
+    if(calls===1)return new Response(null,{status:429});
     return Response.json({choices:[{message:{content:JSON.stringify({recommendations:[{catalogEntryId:'one',name:'Synthetic'}]})}}]});
   };
   await writeFile(path,JSON.stringify({...pack,checksum:'0'.repeat(64)}));
   assert.equal(await runCli(['replay','--pack',path,'--role','candidate'],{env:providerEnv,fetch,write:()=>{}}),1);
   assert.equal(calls,0);
   await writeFile(path,JSON.stringify(pack));const lines:string[]=[];
-  assert.equal(await runCli(['replay','--pack',path,'--role','candidate'],{env:providerEnv,fetch,write:line=>lines.push(line)}),0);
-  assert.equal(calls,6);assert.equal(lines.join('').includes(providerEnv.OPENROUTER_API_KEY),false);
+  assert.equal(await runCli(['replay','--pack',path,'--role','candidate','--provider-retries','1'],{env:providerEnv,fetch,write:line=>lines.push(line)}),0);
+  assert.equal(calls,7);assert.equal(bodies[0],bodies[1]);assert.equal(lines.join('').includes(providerEnv.OPENROUTER_API_KEY),false);
 });
