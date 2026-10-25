@@ -444,7 +444,8 @@ test('LiteLLM default nova-micro sends only synthetic task and eligible facts, n
   assert.equal(response.result.outcome, 'success');
   assert.deepEqual(response.usage, { promptTokens: 13, completionTokens: 7, totalTokens: 20 });
   assert.equal(response.result.trace.completeness, 'partial');
-  assert.equal(response.result.trace.events.length, 1);
+  assert.deepEqual(response.result.trace.events.map(event => event.kind), ['target_started', 'target_completed']);
+  assert.equal(response.result.trace.events[0]?.name, response.result.trace.events[1]?.name);
   assert.equal(JSON.stringify(response).includes(key) || JSON.stringify(local).includes(key), false);
 });
 
@@ -671,8 +672,23 @@ test('provider retry records each HTTP dispatch and reuses the exact request bod
   assert.equal(result.outcome, 'success');
   assert.equal(calls, 2);
   assert.equal(bodies[0], bodies[1]);
-  assert.deepEqual(result.trace.events.map(event => [event.kind, event.status]), [['target_completed', 'unavailable'], ['target_completed', 'ok']]);
-  assert.equal(result.trace.events.length, 2);
+  assert.deepEqual(result.trace.events.map(event => [event.kind, event.status]), [
+    ['target_started', undefined], ['target_completed', 'unavailable'],
+    ['target_started', undefined], ['target_completed', 'ok'],
+  ]);
+  assert.equal(result.trace.events.length, 4);
+});
+
+test('maximum provider retries stay within the trace event cap', async () => {
+  let calls = 0;
+  const local = createLiteLLMAdapter({
+    env, providerRetries: 2, sleep: async () => {},
+    fetch: async () => ++calls < 3 ? new Response(null, { status: 429 }) : completion('{"recommendations":[]}'),
+  });
+  const result = await local.run(syntheticClaim().input, context());
+  assert.equal(result.outcome, 'success');
+  assert.equal(result.trace.events.length, 6);
+  assert.equal(NormalizedTraceSchema.safeParse(result.trace).success, true);
 });
 
 test('Retry-After is honored in seconds and capped at ten seconds', async () => {

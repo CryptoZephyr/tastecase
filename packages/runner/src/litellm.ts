@@ -165,6 +165,7 @@ export class LiteLLMAdapter implements TargetAdapter {
         for (let retryIndex = 0; ; retryIndex++) {
           dispatchStartedAt = Date.now();
           dispatchRecorded = false;
+          events.push({ kind: 'target_started', name: this.name, timestamp: new Date(dispatchStartedAt).toISOString() });
           let response: Response;
           try {
             response = await this.#fetch(this.#url, {
