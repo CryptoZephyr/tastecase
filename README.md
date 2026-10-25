@@ -21,28 +21,16 @@ Built with: Qloo official MCP · NVIDIA Nemotron 3.5 Super VL (OpenRouter free) 
 
 ![TasteCase's live homepage](docs/images/live-homepage.png)
 
-## The problem
-
-A prompt or model change can alter a concierge's restaurant choices while its answers still sound sensible. Format checks alone do not show which recommendation cases changed or whether the change deserves attention.
-
-## What TasteCase does
-
-The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. NVIDIA Nemotron 3.5 Super VL selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
-
-Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally.
-
 ## How it works
 
-1. The owner creates a project, pins restaurant/task versions and confirms public Qloo mappings.
-2. A bounded discovery job ranks the same eligible options for two explicit synthetic profiles.
-3. Code checks coverage and ranking changes. The free model chooses only from those observed contrasts.
-4. A project-scoped runner calls the owner's locally configured assistant. Its credentials never go to the backend.
-5. Repeats and a smaller Qloo comparison investigate the selected pair without changing practical constraints or the target's eligible catalog.
-6. Immutable evidence and checksums survive restart. A saved taste finding still requires human approval; it is not a failed test.
-7. The owner accepts, edits, rejects or defers a case with a rationale. Acceptance alone keeps the taste finding advisory; explicit policy or objective checks need a scoped expectation.
-8. The owner publishes selected approved versions. The suite keeps its original evidence even after a later rejection, edit or runner result.
-9. Two named assistant versions run fresh repeats against that suite. Approved rules, advisory findings and unavailable results stay separate.
-10. The owner freezes the comparison report, exports the pinned pack and replays it locally without new Qloo calls.
+1. You create a project with your restaurant catalog and the task your assistant handles. You confirm which Qloo entity each restaurant and each fictional guest interest maps to.
+2. A discovery job asks Qloo to rank the same restaurants for two fictional guests. Code finds the pairs whose order flips between the guests and records where Qloo has no coverage.
+3. A free model picks one flipped pair to investigate. It can only choose from pairs the code already found, so it can't invent a contrast.
+4. Your local runner sends each guest's request to your assistant, repeats it and runs a smaller follow-up ranking on the chosen pair. Your assistant's keys stay on your machine.
+5. The finding lands on a review card with Qloo's signals. You accept, edit, reject or defer it with a reason. Taste findings stay advisory. Only explicit rules you add can pass or fail.
+6. You publish approved cases as a suite. It's frozen, so later edits or results don't change it.
+7. You run two versions of your assistant against the suite and compare them. Rule results, advisory findings and unavailable results are reported separately.
+8. You freeze the report, download the test pack and replay it locally without calling Qloo again.
 
 ```mermaid
 flowchart LR
@@ -57,11 +45,17 @@ flowchart LR
   Export --> Replay["Local replay without fresh Qloo"]
 ```
 
-## Why Qloo matters
+## How TasteCase uses Qloo
 
-Qloo supplies cross-interest ranking evidence for the team's own eligible restaurant options. That determines which paired briefs and follow-ups the backend investigates, rather than asking an LLM to invent a taste contrast. A small live order reversal has been preserved in a two-item follow-up. **Better useful-case yield than generic generation remains unproven.**
+TasteCase runs Qloo's official MCP harness (`@qloo/qloo-harness@0.1.26`) as a child process and uses its `qloo_describe` and `qloo_rank` tools.
 
-Missing cultural evidence is not a negative preference. An incomplete trace cannot prove an integrity violation. A taste-ranking change is advisory, not an automatic failure.
+- Identity: each restaurant and guest interest is mapped to a Qloo entity with `qloo_describe`, and the owner confirms the match. Rankings then use those IDs.
+- Ranking: `qloo_rank` calls `/v2/insights` with a guest's interests as signals and the team's own restaurants as the candidates. The flips between two guests' rankings decide which cases get investigated, so the cases come from Qloo's data, not from an LLM making up a contrast.
+- Explanations: rankings request `feature.explainability`, and TasteCase keeps the place tags Qloo already returns from `/entities`. Review cards show each restaurant's affinity score, the gap between the two, how much each interest contributed, and cuisine, genre, category, ambience and culinary-style tags, with the tags only one side has marked. None of this adds a request.
+- Rate limits: entity lookups are batched into one request and cached in memory for 15 minutes. A ranking makes at most two HTTP requests, never retries a 429 and waits at least 250ms between requests, under the 5 requests/second limit Qloo support gave us.
+- Meaning: missing coverage means no evidence, not a dislike. A ranking change is something for a person to look at, not an automatic failure, and Qloo never decides whether a recommendation is good.
+
+What we learned building on Qloo's tools, including suggestions for the harness, is in [FEEDBACK.md](FEEDBACK.md).
 
 ## Try it
 
@@ -72,8 +66,7 @@ Start with [Inspect a case](https://tastecase.vercel.app/sample), a saved exampl
 - Without an account: the [public sample](https://tastecase.vercel.app/sample) shows one saved case with real Qloo rankings and assistant answers for fictional diners, and the [in-app docs](https://tastecase.vercel.app/docs). Neither makes provider calls.
 - Full live run: sign up on the hosted app, create a project, issue a runner token, and run the local runner (`packages/runner`, see [docs/runner.md](docs/runner.md)) with your own free OpenRouter key. Qloo calls run on our backend with our hackathon key. Your assistant credentials stay on your machine.
 - The API runs on Render's free tier and sleeps when idle, so the first request after a pause can take up to about a minute.
-- Code: `apps/worker/src/qloo-http.ts` contains the bounded Qloo transport (`minimumDispatchGapMs`); `apps/worker/src/qloo-mcp.ts` and `apps/worker/src/qloo.ts` wire the `qloo_rank` tool and calls. Contrast selection is in `apps/worker/src/decision.ts`.
-
+- Code: `apps/worker/src/qloo-http.ts` contains the bounded Qloo transport (`minimumDispatchGapMs`); `apps/worker/src/qloo-mcp.ts` and `apps/worker/src/qloo.ts` wire the `qloo_rank` tool and calls. Contrast selection is in `apps/worker/src/decision.ts`. Feedback on Qloo's tools is in [FEEDBACK.md](FEEDBACK.md).
 - Signup was checked on production on 2026-10-25 with a fresh account. It needs email confirmation, the confirmation email arrived in under half a minute, and its link signed the account in. Project setup and runner-token issue and revocation also worked.
 
 ## Product / demo
@@ -98,7 +91,7 @@ flowchart TB
 
 | Tool | Role | Current state |
 |---|---|---|
-| Qloo official MCP | Resolve public anchors and rank the fixed eligible options | Integrated worker, live full/reduced rankings and missing-coverage handling verified |
+| Qloo official MCP | Resolve public anchors, rank the fixed eligible options and explain rankings with affinity, interest influence and place tags | Integrated worker; live rankings, explainability, tags and missing-coverage handling verified; review-card signals checked with synthetic fixtures |
 | OpenRouter / NVIDIA Nemotron 3.5 Super VL (free) | Choose a code-verified contrast; default local runner target | Bounded live pilot completed 2026-10-25; reasoning disabled for this model |
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
 | Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; real-provider browser journey verified |
@@ -114,6 +107,11 @@ A dedicated Supabase project holds the private database and Auth/Storage configu
 Bounded discovery pilot on NVIDIA Nemotron 3.5 Super VL (2026-10-25): three Qloo ranking workflows made six HTTP requests, all returning 200, spaced at least 250 ms apart. Twelve free model calls (three guided selections, three generic selections, six target calls) reported $0, with no retries or provider fallbacks. The guided selector chose a case in two of three trials and the generic selector abstained in all three, producing two blinded review cards that no human has reviewed yet. Two earlier attempts the same day stopped cleanly: one on a provider `MODEL_UNAVAILABLE`, and one on an empty answer after low-effort reasoning used about 760 of 771 output tokens, which led to disabling reasoning. This shows the pipeline runs on the new model. It doesn't show that the cases are useful.
 
 Qloo rate-limit fix (2026-10-25): Qloo support reported a 5 requests/second hackathon limit. TasteCase now batches entity lookups, makes at most two HTTP requests per workflow, disables hidden retries and spaces dispatches by 250 ms.
+
+Qloo signals on review cards (2026-10-25): a 2-request live probe confirmed explainability and place tags on the hackathon API. The card section was checked with synthetic fixtures at desktop and phone widths. No live discovery has run on this code yet, and the public sample was recorded before it.
+
+<details>
+<summary>Earlier verification (Oct 13 to 14, historical)</summary>
 
 Hosted browser verification (2026-10-14): genuine Qloo/Nemotron discovery, advisory review, immutable suite publication, a complete **8/8** comparison, frozen report/pack downloads and reopening through the deployed services. **One hosted decision plus ten local assistant requests; the ten local responses reported $0. Four Qloo calls; no model retries or paid fallback.** A transient session-verification timeout recovered with the visible retry; its cause was not established. The downloaded hosted pack was not replayed in this run. The pre-deployment replay evidence below remains separate.
 
@@ -134,6 +132,8 @@ Earlier verification on 2026-10-13 (Nova evidence is historical):
 - Comparison/export/replay: **172 hosted checks** include real Auth, version-bound synthetic execution, private artifacts, immutable reports and review regression checks. The downloaded pack also replayed through **eight real Nova Micro calls**, with intentionally different local prompt configurations and advisory source cases. No Qloo calls or real-user taste verdicts were involved.
 
 Proof metadata remains in ignored local storage, not in published provider-response fixtures. Earlier attempts also preserved rate limits, rejected malformed output and recorded a valid no-useful-contrast result; the successful run does not erase those limits.
+
+</details>
 
 ## Failure cases / what we tested
 
@@ -242,18 +242,19 @@ For the bounded Qloo → free model → runner check, see [live discovery verifi
 
 ## Limitations
 
-- The 2026-10-25 dependency refresh upgraded Next.js to 16.4.3, Zod to 4.6.7, Fastify to 5.12.7 and the worker MCP SDK to 1.32.2. The main-branch audit reported 9 vulnerabilities before the refresh; `npm audit` now reports zero. The lockfile resolves body-parser to 2.4.0, fast-uri to 3.1.9 and 4.2.3, and undici to 8.12.3 while retaining the Pi harness brace-expansion pin at 5.0.12. `npm run check` passed 512 tests, including 56 PostgreSQL checks, with zero skips. Keep the lockfile because upstream Pi publishes a shrinkwrap. See [dependency verification](docs/discovery.md#dependency-security).
 - The free OpenRouter route can be rate-limited or delisted without notice, as happened to the earlier MiniMax and Gemma free routes. TasteCase stops cleanly and never falls back to a paid model.
 - The ranking workflow accepts at most ten mapped options. Larger inputs are explicitly unsupported, not silently split into incomparable scores.
 - Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
-- The hosted real-provider browser journey passed, and the recorded public sample passed API/proxy checks. Auth-email completion, deliberate cold-start recovery, live hosted cancellation/restart, objective-rule browser failures and replay of the newly downloaded hosted pack remain untested. A measured advantage over generic generation is not established.
+- The hosted real-provider browser journey and a fresh production signup with email confirmation passed. Deliberate cold-start recovery, live hosted cancellation and restart, objective-rule browser failures and replay of a newly downloaded hosted pack are still untested.
+- Nobody has reviewed the latest pilot cards yet, so there's no measurement of whether Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## Roadmap
 
 - Verify deliberate hosted cold-start recovery, cancellation and objective-rule failures.
-- Verify Supabase signup/recovery email links and replay the newly downloaded hosted pack.
+- Replay a newly downloaded hosted pack.
+- Re-record the public sample so it shows Qloo signals.
 - Measure whether Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## License
