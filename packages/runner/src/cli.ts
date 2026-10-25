@@ -6,11 +6,12 @@ import { runOnce } from './runtime.js';
 import { replayComparisonFile, type ReplayRole } from './replay.js';
 import { RunnerError, validateTimeout, type Fetch } from './safety.js';
 
-export const CLI_USAGE = `TasteCase authorised local runner (one attempt, no daemon)
+export const CLI_USAGE = `TasteCase authorised local runner (bounded drain, no daemon)
 Usage: tastecase-runner handshake [--allow-loopback-http] [--request-timeout-ms N]
-       tastecase-runner run-once [--allow-loopback-http] [--request-timeout-ms N] [--target-timeout-ms N]
+       tastecase-runner run-once [--allow-loopback-http] [--request-timeout-ms N] [--target-timeout-ms N] [--provider-retries N]
+       tastecase-runner run [--max-attempts N] [same flags as run-once]
        tastecase-runner replay --pack LOCAL.json --role baseline|candidate [--report NEW.json]
-         [--pack-checksum SHA256] [--target-timeout-ms N] [--replay-timeout-ms N] [--allow-loopback-http]
+         [--pack-checksum SHA256] [--target-timeout-ms N] [--replay-timeout-ms N] [--provider-retries N] [--allow-loopback-http]
 
 Environment (never pass keys/tokens as CLI arguments):
   TASTECASE_API_ORIGIN    HTTPS API origin, no path/query/credentials
@@ -24,12 +25,13 @@ Environment (never pass keys/tokens as CLI arguments):
 
 Loopback HTTP requires --allow-loopback-http (API and provider).
 handshake does not invoke the provider or require its key.
+run is bounded to 20 uploaded attempts by default, with a range of 1 to 120, and exits when there is no work.
 POST /runner/handshake -> 200; POST /runner/claims -> 200 lease or 204 no work;
 POST /runner/attempts/:attemptId/results -> 200 matching checksum acknowledgement.
-No automatic target/upload retries. Use exported uploadResult with the identical
-claim/result for an ambiguous upload; never rerun the target to retry an upload.
+Provider retries are disabled by default. --provider-retries 0..2 retries only HTTP 429, 502, 503 or 504.
+Uploads are never retried. Use exported uploadResult with the identical claim/result for an ambiguous upload.
 Exit codes: 0 completed/no-work, 1 invalid/failed, 3 revoked/unauthorised,
-4 API/provider unavailable, 5 lease expired. Replay: 2 mechanical failure,
+4 API/provider unavailable, 5 lease expired, 6 run attempt limit. Replay: 2 mechanical failure,
 1 invalid/cancelled, 4 selected-role execution unavailable, 0 completed (incl advisory).
 Replay needs no API origin, owner credential or runner token. It executes only the
 explicitly bound role afresh and leaves the other role pending in a partial report.
@@ -50,16 +52,30 @@ export interface CliDependencies {
   write?: (line: string) => void;
 }
 
+type DrainStatus = 'drained' | 'attempt_limit' | 'credential_revoked' | 'unauthorized' | 'lease_expired' | 'unavailable' | 'failed';
+type DrainOutcomes = { success: number; malformed_output: number; provider_unavailable: number };
+
+function drainExitCode(status: DrainStatus, outcomes: DrainOutcomes): number {
+  if (status === 'drained') return outcomes.provider_unavailable ? 4 : 0;
+  if (status === 'attempt_limit') return 6;
+  if (status === 'credential_revoked' || status === 'unauthorized') return 3;
+  if (status === 'lease_expired') return 5;
+  if (status === 'unavailable') return 4;
+  return 1;
+}
+
 /** Testable CLI entry point; output never includes target text, upstream errors or credentials. */
 export async function runCli(args: readonly string[], dependencies: CliDependencies = {}): Promise<number> {
   const write = dependencies.write ?? (line => console.log(line));
   if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) { write(CLI_USAGE); return 0; }
+  const command = args[0];
   try {
-    const command = args[0];
-    if (command !== 'handshake' && command !== 'run-once' && command !== 'replay') throw new RunnerError('configuration_error', 'Expected handshake, run-once or replay; use --help.');
+    if (command !== 'handshake' && command !== 'run-once' && command !== 'run' && command !== 'replay') throw new RunnerError('configuration_error', 'Expected handshake, run-once, run or replay; use --help.');
     let allowLoopbackHttp = false;
     let requestTimeoutMs = 15_000;
     let targetTimeoutMs = 60_000;
+    let maxAttempts = 20;
+    let providerRetries = 0;
     let replayTimeoutMs: number | undefined;
     let packPath: string | undefined;
     let reportPath: string | undefined;
@@ -80,6 +96,20 @@ export async function runCli(args: readonly string[], dependencies: CliDependenc
         else if (value === 'baseline' || value === 'candidate') role = value;
         else throw new RunnerError('configuration_error', 'Replay role must be baseline or candidate.');
       }
+      else if (arg === '--max-attempts') {
+        const value = args[++index];
+        const attempts = value && /^\d+$/.test(value) ? Number(value) : NaN;
+        if (command !== 'run' || !Number.isSafeInteger(attempts) || attempts < 1 || attempts > 120) throw new RunnerError('configuration_error', 'Invalid max-attempts option.');
+        maxAttempts = attempts;
+      }
+      else if (arg === '--provider-retries') {
+        const value = args[++index];
+        const retries = value && /^\d+$/.test(value) ? Number(value) : NaN;
+        if (!['run-once', 'run', 'replay'].includes(command) || !Number.isSafeInteger(retries) || retries < 0 || retries > 2) {
+          throw new RunnerError('configuration_error', 'Invalid provider-retries option.');
+        }
+        providerRetries = retries;
+      }
       else if (arg === '--request-timeout-ms' || arg === '--target-timeout-ms' || command === 'replay' && arg === '--replay-timeout-ms') {
         const value = args[++index];
         if (!value || !/^\d+$/.test(value) || command === 'handshake' && arg === '--target-timeout-ms' || command === 'replay' && arg === '--request-timeout-ms') throw new RunnerError('configuration_error', 'Invalid timeout option.');
@@ -92,7 +122,7 @@ export async function runCli(args: readonly string[], dependencies: CliDependenc
     if (command === 'replay') {
       const env = dependencies.env ?? process.env;
       if (!packPath || !role || !env.TASTECASE_ASSISTANT_VERSION) throw new RunnerError('configuration_error', 'Replay requires a local pack, explicit role and TASTECASE_ASSISTANT_VERSION.');
-      const adapter = dependencies.adapter ?? createConfiguredAdapter({ env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs });
+      const adapter = dependencies.adapter ?? createConfiguredAdapter({ env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs, providerRetries });
       const report = await replayComparisonFile({ packPath, reportPath, role, assistantVersion: env.TASTECASE_ASSISTANT_VERSION,
         expectedChecksum, env, adapter, signal: dependencies.signal, targetTimeoutMs, replayTimeoutMs });
       write(JSON.stringify(report));
@@ -107,7 +137,27 @@ export async function runCli(args: readonly string[], dependencies: CliDependenc
       write(JSON.stringify({ status: 'ready', ...response }));
       return 0;
     }
-    const adapter = dependencies.adapter ?? createConfiguredAdapter({ env: dependencies.env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs });
+    const adapter = dependencies.adapter ?? createConfiguredAdapter({ env: dependencies.env, fetch: dependencies.fetch, allowLoopbackHttp, providerTimeoutMs: targetTimeoutMs, providerRetries });
+    if (command === 'run') {
+      const outcomes: DrainOutcomes = { success: 0, malformed_output: 0, provider_unavailable: 0 };
+      let attempts = 0;
+      let status: DrainStatus | undefined;
+      while (attempts < maxAttempts) {
+        if (dependencies.signal?.aborted) { status = 'failed'; break; }
+        const outcome = await runOnce(client, adapter, { signal: dependencies.signal, targetTimeoutMs, uploadReserveMs: requestTimeoutMs });
+        if (outcome.status === 'completed') {
+          attempts++;
+          outcomes[outcome.result.outcome]++;
+          write(JSON.stringify({ status: outcome.status, attemptId: outcome.attemptId, leaseId: outcome.leaseId, outcome: outcome.result.outcome, idempotent: outcome.acknowledgement.idempotent }));
+          continue;
+        }
+        status = outcome.status === 'no_work' ? 'drained' : outcome.status;
+        break;
+      }
+      const summaryStatus = status ?? 'attempt_limit';
+      write(JSON.stringify({ status: summaryStatus, attempts, outcomes }));
+      return drainExitCode(summaryStatus, outcomes);
+    }
     const outcome = await runOnce(client, adapter, { signal: dependencies.signal, targetTimeoutMs, uploadReserveMs: requestTimeoutMs });
     if (outcome.status === 'completed') {
       write(JSON.stringify({ status: outcome.status, attemptId: outcome.attemptId, leaseId: outcome.leaseId, outcome: outcome.result.outcome, idempotent: outcome.acknowledgement.idempotent }));
@@ -121,8 +171,10 @@ export async function runCli(args: readonly string[], dependencies: CliDependenc
     return outcome.status === 'lease_expired' ? 5 : 1;
   } catch (error) {
     const code = error instanceof RunnerError ? error.code : 'invalid_response';
-    write(JSON.stringify({ status: 'failed', code }));
+    if (command === 'run') write(JSON.stringify({ status: 'failed', attempts: 0, outcomes: { success: 0, malformed_output: 0, provider_unavailable: 0 } }));
+    else write(JSON.stringify({ status: 'failed', code }));
     if (code === 'credential_revoked' || code === 'unauthorized') return 3;
+    if (command === 'run') return 1;
     return ['network_unavailable', 'server_unavailable', 'timeout'].includes(code) ? 4 : 1;
   }
 }

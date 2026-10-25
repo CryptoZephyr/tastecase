@@ -9,7 +9,8 @@ import { RunnerError, validateTimeout, withDeadline, type RunnerErrorCode } from
  * Return a validated TargetResult; preserve outside-catalog recommendations and invalid output.
  * Mark trace partial/unavailable unless full target/tool execution is actually observable.
  * Never include provider secrets, account IDs, headers or raw request/response envelopes in trace.
- * No blind provider retries: a single run may have already incurred cost or side effects.
+ * Provider retries are opt-in and limited to HTTP 429, 502, 503 and 504.
+ * Uploads are never retried because a target call may already have incurred cost or side effects.
  */
 export type { TargetAdapter as Adapter } from '@tastecase/contracts';
 
