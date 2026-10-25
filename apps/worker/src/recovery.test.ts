@@ -6,7 +6,7 @@ import { z } from 'zod';
 import {
   checksum, CreateDiscoveryJobRequestSchema, CreateCatalogVersionRequestSchema,
   CreateTaskVersionRequestSchema, PinnedDiscoveryInputSchema, RankingEvidenceSchema,
-  DiscoveryCandidateSchema, type DiscoveryJob, type ComputedDiscoveryFacts,
+  DiscoveryCandidateSchema, isWeakContrast, type DiscoveryJob, type ComputedDiscoveryFacts,
 } from '@tastecase/contracts';
 import { DiscoveryStore, PoolDatabase, type WorkerDatabase, type Queryable } from './store.js';
 import { runDiscoveryOnce } from './engine.js';
@@ -87,8 +87,8 @@ async function fixture(options: FixtureOptions={}) {
     close:async()=>{await client.query('ROLLBACK');await client.end();}};
 }
 
-function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; weakAffinityGaps?:boolean; rank?: (request:RankRequest,context:ProviderContext)=>Promise<void>; error?:'auth'|'transient'; hallucinate?:boolean }={}) {
-  const calls:RankRequest[]=[]; let resolves=0; let decisions=0; let closes=0;
+function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; weakAffinityGaps?:boolean; mixedAffinityGaps?:boolean; rank?: (request:RankRequest,context:ProviderContext)=>Promise<void>; error?:'auth'|'transient'; hallucinate?:boolean }={}) {
+  const calls:RankRequest[]=[]; const selections:ComputedDiscoveryFacts[]=[]; let resolves=0; let decisions=0; let closes=0;
   const qloo:QlooAdapter={
     async resolve(anchor) { resolves++; return {kind:'resolve',anchorId:anchor.id,providerStatus:'needs_input',candidates:[
       {entityId:randomUUID(),name:'Synthetic observed choice one',kind:anchor.kind},{entityId:randomUUID(),name:'Synthetic observed choice two',kind:anchor.kind},
@@ -96,7 +96,8 @@ function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; weakAffi
     async rank(request,context) {
       calls.push(request); await config.rank?.(request,context);
       let ordered=request.options.map(option=>option.entryId);
-      if (!config.sameOrder && request.profileId==='b') ordered.reverse();
+      if (config.mixedAffinityGaps && request.profileId==='b') ordered=['entry-2','entry-0','entry-1'];
+      else if (!config.sameOrder && request.profileId==='b') ordered.reverse();
       if (config.omit) ordered=ordered.slice(0,1);
       return RankingEvidenceSchema.parse({kind:'rank',providerStatus:config.error?'error':'ok',profileId:request.profileId,scope:request.scope,
         requestedEntryIds:request.options.map(option=>option.entryId),orderedEntryIds:config.error?[]:ordered,
@@ -104,13 +105,17 @@ function syntheticAdapters(config: { sameOrder?:boolean; omit?:boolean; weakAffi
         mappingConfirmationIds:request.options.map(option=>option.confirmationId),anchorConfirmationIds:request.anchors.map(anchor=>anchor.confirmationId),
         ...(config.weakAffinityGaps?{affinities:request.options.map(option=>({entryId:option.entryId,
           affinity:request.profileId==='a'?(option.entryId==='entry-0'?0.77:0.7695):(option.entryId==='entry-0'?0.69:0.6899),interests:[]}))}:{}),
+        ...(config.mixedAffinityGaps?{affinities:request.options.map(option=>({entryId:option.entryId,
+          affinity:(request.profileId==='a'
+            ?{'entry-0':0.7700,'entry-1':0.7699,'entry-2':0.7697}
+            :{'entry-0':0.6998,'entry-1':0.68,'entry-2':0.70})[option.entryId]??0,interests:[]}))}:{}),
         ...(config.error?{error:{code:config.error==='auth'?'QLOO_AUTH':'QLOO_RATE_LIMIT',category:config.error,retryable:config.error==='transient'}}:{}),
       });
     },
     async close(){closes++;},
   };
-  const adapters={qloo:()=>qloo,decision:{async select(facts:ComputedDiscoveryFacts){decisions++;return parseSelection({selectedContrastId:config.hallucinate?randomUUID():facts.contrasts[0]?.id??null},facts);}}};
-  return {adapters,calls,get resolves(){return resolves;},get decisions(){return decisions;},get closes(){return closes;}};
+  const adapters={qloo:()=>qloo,decision:{async select(facts:ComputedDiscoveryFacts){decisions++;selections.push(facts);return parseSelection({selectedContrastId:config.hallucinate?randomUUID():facts.contrasts[0]?.id??null},facts);}}};
+  return {adapters,calls,selections,get resolves(){return resolves;},get decisions(){return decisions;},get closes(){return closes;}};
 }
 const fullRequest=(snapshot:Snapshot,profileId:'a'|'b'):RankRequest=>({profileId,scope:'full',
   options:snapshot.job.input.targetInput.mappings.map(mapping=>({entryId:mapping.catalogEntryId,entityId:mapping.qlooEntityId,confirmationId:mapping.id})),
@@ -181,7 +186,28 @@ test('weak affinity reversals stop with the specific no-useful-contrast reason',
     assert.equal(saved.job.state,'no_useful_contrast');assert.equal(saved.job.reason,reason);assert.ok(reason.length<=2000);
     assert.equal(fake.decisions,0);assert.equal(saved.targets.length,0);assert.equal(fake.calls.length,2);
     const facts=saved.evidence.find(evidence=>evidence.data.kind==='facts')?.data;
-    assert.equal(facts?.kind,'facts');if (facts?.kind==='facts') assert.equal(facts.contrasts.length,0);
+    assert.equal(facts?.kind,'facts');if (facts?.kind==='facts') assert.equal(facts.contrasts.length,1);
+  } finally {await f.close();}
+});
+
+test('selection excludes a weak reversal while persisted facts retain weak and strong reversals',async()=>{
+  const f=await fixture({mapped:3});const fake=syntheticAdapters({mixedAffinityGaps:true});
+  try {
+    await runDiscoveryOnce(f.store,fake.adapters,{projectId:f.project});
+    const saved=await f.snapshot();
+    const facts=saved.evidence.find(evidence=>evidence.data.kind==='facts')?.data;
+    const rankA=saved.evidence.find(evidence=>evidence.data.kind==='rank'&&evidence.data.profileId==='a')?.data;
+    const rankB=saved.evidence.find(evidence=>evidence.data.kind==='rank'&&evidence.data.profileId==='b')?.data;
+    assert.ok(facts?.kind==='facts');assert.ok(rankA?.kind==='rank');assert.ok(rankB?.kind==='rank');
+    const weak=facts.contrasts.find(contrast=>contrast.entryIds[0]==='entry-0'&&contrast.entryIds[1]==='entry-2');
+    const strong=facts.contrasts.find(contrast=>contrast.entryIds[0]==='entry-1'&&contrast.entryIds[1]==='entry-2');
+    assert.ok(weak);assert.ok(strong);
+    assert.equal(isWeakContrast(weak,rankA,rankB),true);assert.equal(isWeakContrast(strong,rankA,rankB),false);
+    assert.equal(saved.job.state,'waiting_runner');
+    assert.equal(facts.contrasts.length,2);
+    assert.equal(fake.decisions,1);assert.equal(fake.selections.length,1);
+    assert.equal(fake.selections[0]?.contrasts.length,1);
+    assert.equal(fake.selections[0]?.contrasts[0]?.id,strong.id);
   } finally {await f.close();}
 });
 

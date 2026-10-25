@@ -8,7 +8,7 @@ import {
   PinnedDiscoveryInputSchema, PinnedReviewEvidenceSchema, PublishSuiteRequestSchema, REVIEW_LIMITS,
   REST_CONTRACTS, ReviewCaseResponseSchema, ReviewConflictError, ReviewDecisionRequestSchema,
   ReviewDecisionResponseSchema, ReviewHeadSchema, ReviewRecordSchema, ReviewExpectationSchema, ReviewWindowRequestSchema,
-  SuiteIdentitySchema, SuiteVersionSchema, TargetInputSchema, checksum, computeDiscoveryFacts, discoveryAttemptId,
+  SuiteIdentitySchema, SuiteVersionSchema, TargetInputSchema, checksum, computeDiscoveryFacts, discoveryAttemptId, isWeakContrast,
   pinReviewEvidence, prepareReviewCase, prepareReviewDecision, prepareSuitePublication, selectSuiteCases,
   validateApprovedExpectation, validatePinnedReviewEvidence, validatePublicationRetry, validateReviewRetry,
   type ApprovedExpectation, type PinnedReviewEvidence, type PinnedReviewEvidenceSource, type ReviewDecisionRequest,
@@ -161,6 +161,31 @@ test('pinned immutable checksum detects tampering and rechecks coverage even aft
   assert.equal(PinnedReviewEvidenceSchema.safeParse({ ...f.pinned, capturedAt: '2026-10-14T12:00:00.000Z' }).success, false);
   assert.equal(PinnedReviewEvidenceSchema.safeParse(rehash({ ...f.pinned, coverage: { ...f.pinned.coverage, missingEntryIds: [] } })).success, false);
   assert.equal(PinnedReviewEvidenceSchema.safeParse(rehash({ ...f.pinned, limitations: [] })).success, false);
+});
+test('pinned review validation accepts a weak reversal in captured facts', () => {
+  const f = fixture();
+  const evidence = f.source.evidence.map(row => {
+    if (row.data.kind !== 'rank') return row;
+    const values = row.data.profileId === 'a'
+      ? { one: 0.76970, two: 0.76903 }
+      : { one: 0.69164, two: 0.69449 };
+    const data = { ...row.data, affinities: Object.entries(values).map(([entryId, affinity]) => ({ entryId, affinity, interests: [] })) };
+    return { ...row, data, checksum: checksum(data) };
+  });
+  const rankA = evidence.find(row => row.data.kind === 'rank' && row.data.profileId === 'a');
+  const rankB = evidence.find(row => row.data.kind === 'rank' && row.data.profileId === 'b');
+  if (!rankA || rankA.data.kind !== 'rank' || !rankB || rankB.data.kind !== 'rank') throw new Error('Fixture rankings are missing');
+  const facts = computeDiscoveryFacts(f.source.jobId, [rankA.id, rankB.id], rankA.data, rankB.data);
+  assert.equal(facts.contrasts.length, 1);
+  assert.equal(isWeakContrast(facts.contrasts[0]!, rankA.data, rankB.data), true);
+  const withFacts = evidence.map(row => row.data.kind === 'facts'
+    ? { ...row, data: facts, checksum: checksum(facts) }
+    : row);
+  const pinned = pinReviewEvidence({ ...f.source, evidence: withFacts });
+  const validated = validatePinnedReviewEvidence(pinned, f.initial.case);
+  const validatedFacts = validated.evidence.find(row => row.data.kind === 'facts');
+  assert.ok(validatedFacts && validatedFacts.data.kind === 'facts');
+  assert.deepEqual(validatedFacts.data, facts);
 });
 for (const field of ['projectId', 'jobId', 'candidateId', 'candidateChecksum'] as const) test(`persisted case rejects forged ${field}`, () => {
   const f = fixture();

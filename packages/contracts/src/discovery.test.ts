@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import {
   checksum, CreateDiscoveryJobRequestSchema, PinnedDiscoveryInputSchema, RankingEvidenceSchema,
   QlooStatusSchema, NormalizedDiscoveryEvidenceSchema, DiscoveryCandidateContentSchema, DiscoveryAnchorConfirmationSchema, DiscoveryProviderAttemptSchema,
-  computeDiscoveryFacts, validateModelContrastDecision, validateDiscoveryCandidate, discoveryAttemptId, MIN_CONTRAST_AFFINITY_GAP, REST_CONTRACTS,
+  computeDiscoveryFacts, validateModelContrastDecision, validateDiscoveryCandidate, discoveryAttemptId, isWeakContrast, MIN_CONTRAST_AFFINITY_GAP, REST_CONTRACTS,
 } from './index.js';
 
 const projectId=randomUUID(); const catalogId=randomUUID(); const taskId=randomUUID(); const jobId=randomUUID(); const ownerId=randomUUID();
@@ -81,34 +81,31 @@ test('no contrast, degraded and empty evidence never invent a taste verdict',()=
   assert.equal(computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,providerStatus:'degraded'}).unsupportedReason,'provider_unavailable');
   assert.equal(computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,providerStatus:'empty',orderedEntryIds:[],missingEntryIds:b.requestedEntryIds}).contrasts.length,0);
 });
-test('weak affinity gaps in both profiles skip the reversed pair',()=>{
+const weak=(aValues:Record<string,number>,bValues:Record<string,number>)=>{
+  const ra=withAffinities(a,aValues); const rb=withAffinities(b,bValues);
+  const facts=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],ra,rb);
+  assert.equal(facts.contrasts.length,1);
+  return isWeakContrast(facts.contrasts[0]!,ra,rb);
+};
+test('weak affinity gaps in both profiles mark the reversed pair weak',()=>{
   assert.equal(MIN_CONTRAST_AFFINITY_GAP,0.01);
-  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
-    withAffinities(a,{one:0.8,two:0.795}),withAffinities(b,{one:0.6,two:0.595}));
-  assert.equal(result.contrasts.length,0);
+  assert.equal(weak({one:0.8,two:0.795},{one:0.6,two:0.595}),true);
+  assert.equal(weak({one:0.77,two:0.7695},{one:0.69,two:0.6899}),true);
 });
-test('the specified raw weak affinity gaps skip the reversed pair',()=>{
-  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
-    withAffinities(a,{one:0.77,two:0.7695}),withAffinities(b,{one:0.69,two:0.6899}));
-  assert.equal(result.contrasts.length,0);
-});
-test('a profile gap at the threshold keeps the reversed pair',()=>{
-  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
-    withAffinities(a,{one:0.81,two:0.8}),withAffinities(b,{one:0.69,two:0.6899}));
-  assert.equal(result.contrasts.length,1);
+test('a profile gap at the threshold keeps the reversed pair, including float rounding',()=>{
+  assert.equal(weak({one:0.81,two:0.8},{one:0.69,two:0.6899}),false);
+  assert.equal(weak({one:0.69,two:0.68},{one:0.56,two:0.57}),false);
+  assert.equal(weak({one:0.69,two:0.68},{one:0.69,two:0.6899}),false);
 });
 test('missing affinity evidence keeps the reversed pair',()=>{
-  const result=computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],
-    withAffinities(a,{one:0.8}),withAffinities(b,{one:0.69,two:0.6899}));
-  assert.equal(result.contrasts.length,1);
+  assert.equal(weak({one:0.8},{one:0.69,two:0.6899}),false);
 });
-test('kept contrasts preserve the previous facts JSON byte-for-byte',()=>{
+test('computed facts keep weak reversals so pinned historical evidence still validates',()=>{
   const evidenceIds:[string,string]=[randomUUID(),randomUUID()];
   const previousFacts=computeDiscoveryFacts(jobId,evidenceIds,a,b);
-  const factsWithAffinities=computeDiscoveryFacts(jobId,evidenceIds,
-    withAffinities(a,{one:0.77,two:0.75}),withAffinities(b,{one:0.69,two:0.6899}));
-  assert.equal(factsWithAffinities.contrasts.length,1);
-  assert.equal(JSON.stringify(factsWithAffinities),JSON.stringify(previousFacts));
+  const weakFacts=computeDiscoveryFacts(jobId,evidenceIds,
+    withAffinities(a,{one:0.77,two:0.7695}),withAffinities(b,{one:0.69,two:0.6899}));
+  assert.equal(JSON.stringify(weakFacts),JSON.stringify(previousFacts));
 });
 test('separate affinity calls cannot be merged or reduced and presented as a common full-catalog rank',()=>{
   assert.throws(()=>computeDiscoveryFacts(jobId,[randomUUID(),randomUUID()],a,{...b,scope:'reduced_pair',requestedEntryIds:['one','two'],missingEntryIds:[]}),/fixed mapped catalog/);
