@@ -19,13 +19,13 @@ export const architecture: DocSection = {
   },
   'agent-loop': {
     headings: [{ id: 'bounded', label: 'Work within your limits' }, { id: 'model', label: 'What the model may decide' }, { id: 'investigation', label: 'Ask your assistant' }],
-    keywords: ['worker', 'minimax', 'model decision', 'contrast'],
+    keywords: ['worker', 'nemotron', 'model decision', 'contrast'],
     Body: () => (
       <>
         <H2 id="bounded">Work within your limits</H2>
         <p>The background worker handles one saved discovery job at a time: find interest matches for you to confirm, collect rankings, find an interesting pair, ask your assistant through the runner and save a case. Your call limits and deadline keep that work bounded.</p>
         <H2 id="model">What the model may decide</H2>
-        <p>MiniMax M3.1 Flash, through OpenRouter’s free route, helps select one of the restaurant pairs already found in the rankings. It may choose none. It cannot invent a pair or decide that the assistant failed a taste test. Unsupported choices are rejected.</p>
+        <p>NVIDIA Nemotron 3.5 Super VL, through OpenRouter’s free route, helps select one of the restaurant pairs already found in the rankings. It may choose none. It cannot invent a pair or decide that the assistant failed a taste test. Unsupported choices are rejected.</p>
         <H2 id="investigation">Ask your assistant</H2>
         <p>The runner asks your assistant about both diners. You can request repeats and a focused follow-up about the interesting pair. The practical needs and allowed restaurants stay the same.</p>
       </>
