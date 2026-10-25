@@ -306,7 +306,7 @@ test('default OpenRouter replay validates the pack before dispatch and uses the 
   const fetch:typeof globalThis.fetch=async(url,request)=>{
     calls++;assert.equal(String(url),'https://openrouter.ai/api/v1/chat/completions');
     const body=JSON.parse(String(request?.body)) as Record<string,unknown>;
-    assert.equal(body.model,'minimax/minimax-m3.1-flash:free');
+    assert.equal(body.model,'nvidia/nemotron-3.5-super-vl:free');
     assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
     return Response.json({choices:[{message:{content:JSON.stringify({recommendations:[{catalogEntryId:'one',name:'Synthetic'}]})}}]});
   };

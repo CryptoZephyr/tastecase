@@ -8,7 +8,7 @@ Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](
 
 The web app (`apps/web`) follows the owner-approved design and is connected through Supabase sign-in and a bounded, same-origin API bridge. The real-provider browser journey and downloaded-pack replay passed before deployment. The merged build is now hosted on Vercel and free Render. Recorded pre-deployment evidence is on [PR #3](https://github.com/CryptoZephyr/tastecase/pull/3).
 
-Built with: Qloo official MCP · MiniMax M3.1 Flash (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
+Built with: Qloo official MCP · NVIDIA Nemotron 3.5 Super VL (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
 
 **Status: hosted web app, private projects, backend, local runner and a read-only [public sample](https://tastecase.vercel.app/sample). The repository stays private.**
 
@@ -20,7 +20,7 @@ A prompt or model change can alter a concierge's restaurant choices while its an
 
 ## What TasteCase does
 
-The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. Nemotron selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
+The backend tests two fictional interest profiles against the same fixed restaurant catalog and practical constraints. Qloo guides cultural contrasts to investigate. NVIDIA Nemotron 3.5 Super VL selects a supported contrast, and an authorised local runner executes the assistant, repeats the case and runs a focused follow-up. The owner can review the saved finding and publish approved expectation versions in a suite that later edits cannot change.
 
 Owned projects, immutable inputs, scoped runner access, discovery/recovery, human review and immutable suites are implemented. Teams can compare two explicitly bound assistant versions, download a safe test pack/report and replay a selected version locally.
 
@@ -73,7 +73,7 @@ flowchart TB
   Web --> Backend["One Node process: API + discovery worker"]
   Backend <--> DB["Postgres: inputs, leases, checkpoints, evidence"]
   Backend --> MCP["Official Qloo MCP child"]
-  Backend --> Model["Free MiniMax: bounded contrast choice"]
+  Backend --> Model["Free Nemotron 3.5 Super VL: bounded contrast choice"]
   Runner["Local project-scoped runner"] <--> Backend
   Runner --> Target["Owner's assistant; credentials stay local"]
 ```
@@ -83,7 +83,7 @@ flowchart TB
 | Tool | Role | Current state |
 |---|---|---|
 | Qloo official MCP | Resolve public anchors and rank the fixed eligible options | Integrated worker, live full/reduced rankings and missing-coverage handling verified |
-| OpenRouter / NVIDIA Nemotron 3 Super (free) | Choose a code-verified contrast; default local runner target | Browser journey and replay verified: 11 model calls reporting $0; no retry or paid fallback |
+| OpenRouter / NVIDIA Nemotron 3.5 Super VL (free) | Choose a code-verified contrast; default local runner target | Selected 2026-10-25 after the MiniMax free route was delisted; live pilot pending |
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
 | Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; real-provider browser journey verified |
 | Fastify / Node | One API/worker process with a Postgres-backed queue | Local startup, readiness, cancellation and restart tests pass |
@@ -91,7 +91,7 @@ flowchart TB
 
 ## What's running
 
-A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `minimax/minimax-m3.1-flash:free` through OpenRouter. Earlier Nemotron and Nova Micro evidence below is historical, not verification of the new route.
+A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3.5-super-vl:free` through OpenRouter. Earlier Nemotron 3 Super and Nova Micro evidence below is historical, not verification of this model.
 
 ## Evidence
 
@@ -135,7 +135,7 @@ Proof metadata remains in ignored local storage, not in published provider-respo
 - `apps/api`: owner/runner/discovery/review/suite/comparison routes, single-process backend and migration CLI.
 - `apps/worker`: guarded MCP/model adapters, bounded investigations and recovery.
 - `packages/contracts`: shared validation, pinned inputs and checksums.
-- `packages/runner`: local runtime, CLI, free-only MiniMax adapter and explicit legacy OpenAI-compatible adapter.
+- `packages/runner`: local runtime, CLI, free-only Nemotron 3.5 Super VL adapter and explicit legacy OpenAI-compatible adapter.
 - `supabase`: migrations and database-invariant tests.
 - `scripts`: opt-in live runner/discovery verification.
 

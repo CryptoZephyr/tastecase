@@ -42,7 +42,7 @@ Supabase's canonical site URL is `https://tastecase.vercel.app`. The explicit pr
 
 Use `TASTECASE_API_ORIGIN=https://tastecase-api.onrender.com`, not the Vercel URL or its owner-only API proxy. Issue a project-scoped runner token in the app, then set it in the local environment. For the default adapter, set local `OPENROUTER_API_KEY` and an explicit `TASTECASE_ASSISTANT_VERSION` release label. See [the runner guide](runner.md).
 
-The selected MiniMax M3.1 Flash model is free-only with no paid/provider fallback. Baseline and Candidate can share it; different labels alone do not change a prompt. Your target provider key stays on the runner machine.
+The selected NVIDIA Nemotron 3.5 Super VL model is free-only with no paid/provider fallback. Baseline and Candidate can share it; different labels alone do not change a prompt. Your target provider key stays on the runner machine.
 
 ## Free-tier limits
 

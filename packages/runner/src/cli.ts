@@ -15,7 +15,7 @@ Usage: tastecase-runner handshake [--allow-loopback-http] [--request-timeout-ms 
 Environment (never pass keys/tokens as CLI arguments):
   TASTECASE_API_ORIGIN    HTTPS API origin, no path/query/credentials
   TASTECASE_RUNNER_TOKEN  Project-scoped minted runner bearer credential
-  OPENROUTER_API_KEY     Local key; default free-only MiniMax M3.1 Flash adapter
+  OPENROUTER_API_KEY     Local key; default free-only Nemotron 3.5 Super VL adapter
   TASTECASE_MODEL_PROVIDER Optional: openrouter (default), or explicit litellm
   LITELLM_BASE_URL       Trusted local provider base URL (include /v1 if needed)
   TASTECASE_ASSISTANT_VERSION Explicit local release binding, required for comparisons/replay
