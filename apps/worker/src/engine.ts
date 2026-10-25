@@ -7,7 +7,7 @@ import {
 } from '@tastecase/contracts';
 import { DiscoveryStore } from './store.js';
 import {
-  StopWork, UnknownDispatch, evidenceFor, type Snapshot, type QlooAdapter, type DecisionAdapter,
+  ModelHttpError, StopWork, UnknownDispatch, evidenceFor, type Snapshot, type QlooAdapter, type DecisionAdapter,
   type RankRequest, type ProviderContext, type TargetObservation,
 } from './types.js';
 import { syntheticBrief, syntheticTarget, selectedPair } from './synthetic.js';
@@ -65,6 +65,7 @@ function logProviderInvalidData(
   const causes = error instanceof TypeError ? causeClassNames(error) : undefined;
   console.error(JSON.stringify({
     event:'discovery_provider_invalid_data',jobId,operationKey,kind,errorClass,detail,
+    ...(error instanceof ModelHttpError ? {httpStatus:error.httpStatus} : {}),
     ...(causes ? {causeClasses:causes} : {}),
   }));
 }
@@ -124,10 +125,14 @@ async function operation(
   } catch (error) {
     if (signal.aborted) throw error;
     if (error instanceof TypeError || error instanceof z.ZodError || error instanceof SyntaxError) {
-      const code = error.message === 'MODEL_AUTH' ? 'MODEL_AUTH' : error.message === 'MODEL_UNAVAILABLE' ? 'MODEL_UNAVAILABLE' : 'PROVIDER_INVALID_DATA';
+      const code = error instanceof ModelHttpError
+        ? error.message as 'MODEL_AUTH' | 'MODEL_RATE_LIMITED' | 'MODEL_UNAVAILABLE'
+        : error.message === 'MODEL_AUTH' ? 'MODEL_AUTH' : error.message === 'MODEL_UNAVAILABLE' ? 'MODEL_UNAVAILABLE' : 'PROVIDER_INVALID_DATA';
       logProviderInvalidData(job.id,key,kind,error);
       await store.fail(job,id,code === 'MODEL_AUTH' ? 'auth' : code === 'PROVIDER_INVALID_DATA' ? 'invalid_input' : 'unavailable',code);
-      throw new StopWork('unavailable','Provider access, schema compatibility or output validation was unavailable. No taste verdict was made.');
+      throw new StopWork('unavailable',code === 'MODEL_RATE_LIMITED'
+        ? "The free model was rate limited or reached its daily free quota (OpenRouter's free daily quota resets at 00:00 UTC). No taste verdict was made. Try again later."
+        : 'Provider access, schema compatibility or output validation was unavailable. No taste verdict was made.');
     }
     throw new UnknownDispatch();
   }

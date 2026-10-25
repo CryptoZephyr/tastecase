@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ComputedDiscoveryFactsSchema, IdSchema, validateModelContrastDecision, type ComputedDiscoveryFacts } from '@tastecase/contracts';
 import type { DecisionAdapter, ProviderContext } from './types.js';
-import { UnknownDispatch } from './types.js';
+import { ModelHttpError, UnknownDispatch } from './types.js';
 
 const selectedIdSchema = z.strictObject({ selectedContrastId:IdSchema.nullable() });
 const responseSchema = z.object({ choices:z.array(z.object({ message:z.object({
@@ -51,7 +51,12 @@ export class OpenRouterDecisionAdapter implements DecisionAdapter {
       }),signal:AbortSignal.any([context.signal,AbortSignal.timeout(60000)]),
     }).catch(()=>{ throw new UnknownDispatch(); });
     // Gateway HTTP flags are not official retryable Qloo envelopes. Never retry them automatically.
-    if (!response.ok) { await response.body?.cancel(); throw new TypeError(response.status === 401 || response.status === 403 ? 'MODEL_AUTH' : 'MODEL_UNAVAILABLE'); }
+    if (!response.ok) {
+      await response.body?.cancel();
+      const code = response.status === 401 || response.status === 403 ? 'MODEL_AUTH'
+        : response.status === 429 ? 'MODEL_RATE_LIMITED' : 'MODEL_UNAVAILABLE';
+      throw new ModelHttpError(code,response.status);
+    }
     if (response.redirected) { await response.body?.cancel(); throw new TypeError('MODEL_UNAVAILABLE'); }
     try {
       const result = responseSchema.parse(await boundedJson(response,context.outputBytes));
