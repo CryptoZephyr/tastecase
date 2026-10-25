@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { QlooHttpDiagnosticsSchema } from '@tastecase/contracts';
-import { QLOO_HOST, childEnvironment, type McpSession } from './qloo.js';
+import { QlooEntityTagsSchema, QLOO_HOST, childEnvironment, type McpSession } from './qloo.js';
 import type { ProviderContext } from './types.js';
 
 
@@ -35,10 +35,10 @@ export async function openOfficialSession(context: ProviderContext): Promise<Mcp
   return {
     listTools: signal => client.listTools(undefined,{signal,timeout:15000}),
     async callTool(name,args,requestContext) {
-      let response: { structuredContent?: unknown; content: { type: string; text?: string | undefined }[]; _meta?: { tastecaseHttp: unknown } | undefined };
+      let response: { structuredContent?: unknown; content: { type: string; text?: string | undefined }[]; _meta?: { tastecaseHttp: unknown; tastecaseEntityTags: z.infer<typeof QlooEntityTagsSchema> } | undefined };
       try {
         response = z.object({structuredContent:z.unknown().optional(),content:z.array(z.object({type:z.string(),text:z.string().optional()}).passthrough()),
-          _meta:z.object({tastecaseHttp:z.unknown()}).optional()}).parse(
+          _meta:z.strictObject({tastecaseHttp:z.unknown(),tastecaseEntityTags:QlooEntityTagsSchema}).optional()}).parse(
           await client.callTool({name,arguments:args},undefined,{signal:requestContext.signal,timeout:60000}));
       } catch { await close(); throw new Error('MCP dispatch outcome unavailable'); }
       const raw = response.structuredContent ?? (() => {
@@ -49,7 +49,8 @@ export async function openOfficialSession(context: ProviderContext): Promise<Mcp
       // Reject accidental credential echo before normalisation/persistence.
       if (JSON.stringify(raw).includes(key)) throw new TypeError('Unsafe MCP echo');
       const http = QlooHttpDiagnosticsSchema.parse(response._meta?.tastecaseHttp);
-      return { ...z.record(z.string(),z.unknown()).parse(raw), http };
+      const entityTags = response._meta?.tastecaseEntityTags ?? [];
+      return { ...z.record(z.string(),z.unknown()).parse(raw), http, entityTags };
     },
     async close() { context.signal.removeEventListener('abort',abort); await close(); },
   };

@@ -3,25 +3,25 @@ import { createQlooTools, startCanonicalMcpServer, type QlooHarnessToolDefinitio
 import { QlooHttpDiagnosticsSchema, type QlooHttpDiagnostics } from '@tastecase/contracts';
 import { z } from 'zod';
 import { BoundedQlooClient } from './qloo-http.js';
-import { QLOO_HOST } from './qloo.js';
+import { QlooEntityTagsSchema, QLOO_HOST } from './qloo.js';
 
 /** Keep the pinned official tools/server; supply only the bounded transport through their public factory. */
 export function boundedMcpOptions(key: string, request: typeof fetch = fetch, writeOut = (value: string) => { process.stdout.write(value); }) {
   const client = new BoundedQlooClient(key, request);
-  const receipts = new Map<string, QlooHttpDiagnostics>();
+  const receipts = new Map<string, { http: QlooHttpDiagnostics; entityTags: z.infer<typeof QlooEntityTagsSchema> }>();
   const tools: QlooHarnessToolDefinition[] = createQlooTools({ client }).filter(tool => ['qloo_rank', 'qloo_describe'].includes(tool.name)).map(tool => ({
     ...tool,
     async execute(id, args, signal, onUpdate, context) {
-      const { result, http } = await client.run(tool.name === 'qloo_rank' ? 'rank' : 'describe', childSignal => tool.execute(id, args, childSignal, onUpdate, context), signal);
-      receipts.set(id, QlooHttpDiagnosticsSchema.parse(http));
+      const { result, http, entityTags } = await client.run(tool.name === 'qloo_rank' ? 'rank' : 'describe', childSignal => tool.execute(id, args, childSignal, onUpdate, context), signal);
+      receipts.set(id, { http: QlooHttpDiagnosticsSchema.parse(http), entityTags: QlooEntityTagsSchema.parse(entityTags) });
       return result;
     },
   }));
   return { tools, writeOut(value: string) {
     const response = z.object({ id: z.union([z.string(), z.number()]).nullable(), result: z.record(z.string(), z.unknown()).optional() }).passthrough().parse(JSON.parse(value));
     const id = `mcp-${response.id === null ? 'request' : String(response.id)}`;
-    const http = receipts.get(id); receipts.delete(id);
-    if (http && response.result) response.result._meta = { tastecaseHttp: http };
+    const metadata = receipts.get(id); receipts.delete(id);
+    if (metadata && response.result) response.result._meta = { tastecaseHttp: metadata.http, tastecaseEntityTags: metadata.entityTags };
     writeOut(`${JSON.stringify(response)}\n`);
   } };
 }

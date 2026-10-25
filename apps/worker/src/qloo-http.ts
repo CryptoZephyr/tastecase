@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { QlooWorkflowExecutionError, type QlooToolClient } from '@qloo/qloo-harness';
-import { IdSchema, type QlooHttpDiagnostics } from '@tastecase/contracts';
+import { IdSchema, QlooTagSchema, type QlooHttpDiagnostics } from '@tastecase/contracts';
 import { z } from 'zod';
 import { boundedJson } from './decision.js';
 import { QLOO_HOST } from './qloo.js';
@@ -30,7 +30,24 @@ export function retryAfterSeconds(value: string | null, now: number): number | n
 
 interface Call {
   operation: Operation; signal: AbortSignal; http: QlooHttpDiagnostics;
+  entityTags: Map<string, z.infer<typeof QlooTagSchema>[]>;
+  entityTagsRequested: boolean;
   pending: { ids: string[]; resolve: (entities: Entity[]) => void; reject: (error: unknown) => void }[];
+}
+
+function filteredTags(value: unknown): z.infer<typeof QlooTagSchema>[] {
+  if (!Array.isArray(value)) return [];
+  const tags: z.infer<typeof QlooTagSchema>[] = []; const names = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const parsed = QlooTagSchema.safeParse({ type: item.type, name: item.name });
+    if (!parsed.success) continue;
+    const name = parsed.data.name.toLowerCase();
+    if (names.has(name)) continue;
+    names.add(name); tags.push(parsed.data);
+    if (tags.length === 12) break;
+  }
+  return tags;
 }
 
 /** A session-private transport for the official tools. No hidden retries or raw diagnostic logs. */
@@ -39,6 +56,7 @@ export class BoundedQlooClient implements QlooToolClient {
   private call: Call | undefined;
   private readonly cache = new Map<string, { entity: Entity; expires: number; bytes: number }>();
   private cacheBytes = 0;
+  private recentEntityTags: { entityId: string; tags: z.infer<typeof QlooTagSchema>[] }[] = [];
   private nextDispatchAt = -Infinity;
   constructor(key: string, private readonly request: typeof fetch = fetch, private readonly now = Date.now,
     private readonly pause: (ms: number, signal: AbortSignal) => Promise<unknown> = (ms, signal) => delay(ms, undefined, { signal })) {
@@ -48,9 +66,16 @@ export class BoundedQlooClient implements QlooToolClient {
   async run<T>(operation: Operation, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal) {
     if (this.call) throw new TypeError('Concurrent Qloo workflows are unsupported');
     const call: Call = { operation, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(55_000)]),
-      http: { maxAttempts: 2, attempts: 0, cacheHits: 0, requests: [] }, pending: [] };
+      http: { maxAttempts: 2, attempts: 0, cacheHits: 0, requests: [] }, entityTags: new Map(), entityTagsRequested: false, pending: [] };
     this.call = call;
-    try { return { result: await work(call.signal), http: call.http }; }
+    try {
+      const result = await work(call.signal);
+      const entityTags = call.entityTagsRequested
+        ? [...call.entityTags].map(([entityId, tags]) => ({ entityId, tags }))
+        : operation === 'rank' ? this.recentEntityTags : [];
+      if (call.entityTagsRequested) this.recentEntityTags = entityTags;
+      return { result, http: call.http, entityTags };
+    }
     finally { this.call = undefined; }
   }
   private failure(code: 'QLOO_AUTH' | 'QLOO_RATE_LIMIT' | 'QLOO_UPSTREAM' | 'QLOO_CONNECT' | 'QLOO_TIMEOUT' | 'QLOO_CONTRACT' | 'CANCELLED', retryable = false) {
@@ -102,7 +127,10 @@ export class BoundedQlooClient implements QlooToolClient {
       return body;
     } catch { throw this.failure('QLOO_CONTRACT'); }
   }
-  insights(query: Query, options?: RequestOptions) { return this.get('/v2/insights', query, options); }
+  insights(query: Query, options?: RequestOptions) {
+    const call = this.active();
+    return this.get('/v2/insights', call.operation === 'rank' ? { ...query, 'feature.explainability': true } : query, options);
+  }
   searchEntities(query: Query, options?: RequestOptions) { return this.get('/search', query, options); }
   tags(): Promise<never> { return Promise.reject(this.failure('QLOO_CONTRACT')); }
   compare(): Promise<never> { return Promise.reject(this.failure('QLOO_CONTRACT')); }
@@ -110,6 +138,7 @@ export class BoundedQlooClient implements QlooToolClient {
 
   async entities(entityIds: readonly string[], options: RequestOptions = {}) {
     const call = this.active(); options.signal?.throwIfAborted();
+    call.entityTagsRequested = true;
     const ids = [...new Set(entityIds.map(id => IdSchema.parse(id)))];
     if (!ids.length || ids.length > 15) throw this.failure('QLOO_CONTRACT');
     const entities: Entity[] = []; const missing: string[] = [];
@@ -124,6 +153,7 @@ export class BoundedQlooClient implements QlooToolClient {
         if (call.pending.length === 1) queueMicrotask(() => { void this.flush(call); });
       }));
     }
+    for (const entity of entities) call.entityTags.set(entity.entity_id, filteredTags(entity.tags));
     return { results: { entities } };
   }
   private async flush(call: Call) {
