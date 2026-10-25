@@ -4,5 +4,5 @@
     "build": "tsc -p tsconfig.build.json", "test": "node --import tsx --test src/**/*.test.ts",
     "dev": "tsx src/main.ts", "start": "node dist/main.js", "migrate": "tsx src/migrate.ts"
   },
-  "dependencies": { "@tastecase/contracts": "0.1.0", "@tastecase/worker": "0.1.0", "fastify": "5.12.5", "pg": "8.16.3" }
+  "dependencies": { "@tastecase/contracts": "0.1.0", "@tastecase/worker": "0.1.0", "fastify": "5.12.7", "pg": "8.16.3" }
 }

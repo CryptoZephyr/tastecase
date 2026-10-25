@@ -222,7 +222,7 @@ For the bounded Qloo → Nova → runner check, see [live discovery verification
 
 ## Limitations
 
-- The four Qloo/Pi audit findings were resolved on 2026-10-13 with scoped dependency pins and the committed lockfile. `npm audit` reports **zero vulnerabilities**; clean installation, live official MCP calls and all 329 tests passed. Keep the lockfile: upstream Pi still pins the old versions. See [dependency verification](docs/discovery.md#dependency-security).
+- The 2026-10-25 dependency refresh upgraded Next.js to 16.4.3, Zod to 4.6.7, Fastify to 5.12.7 and the worker MCP SDK to 1.32.2. The main-branch audit reported 9 vulnerabilities before the refresh; `npm audit` now reports zero. The lockfile resolves body-parser to 2.4.0, fast-uri to 3.1.9 and 4.2.3, and undici to 8.12.3 while retaining the Pi harness brace-expansion pin at 5.0.12. `npm run check` passed 512 tests, including 56 PostgreSQL checks, with zero skips. Keep the lockfile because upstream Pi publishes a shrinkwrap. See [dependency verification](docs/discovery.md#dependency-security).
 - The ranking workflow accepts at most ten mapped options. Larger inputs are explicitly unsupported, not silently split into incomparable scores.
 - Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.

@@ -9,7 +9,7 @@ test('the pinned ESM-only harness starts and exposes compatible tools without a 
   assert.ok(piManifest);
   const piRequire = createRequire(piManifest);
   const patternRequire = createRequire(piRequire.resolve('minimatch'));
-  assert.equal((piRequire('undici/package.json') as { version: string }).version, '8.10.2');
+  assert.equal((piRequire('undici/package.json') as { version: string }).version, '8.12.3');
   assert.equal((patternRequire('brace-expansion/package.json') as { version: string }).version, '5.0.12');
   const previous = process.env.QLOO_API_KEY;
   process.env.QLOO_API_KEY = 'synthetic-tool-schema-check-no-provider-calls';
