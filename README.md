@@ -15,7 +15,7 @@ TasteCase is built for the engineering and QA team, not for diners. Your assista
 
 Live app: [tastecase.vercel.app](https://tastecase.vercel.app) · [In-app docs](https://tastecase.vercel.app/docs) · Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/)
 
-Built with: Qloo official MCP · NVIDIA Nemotron 3.5 Super VL (OpenRouter free) · Supabase · Fastify / Node · Next.js / React Aria Components
+Built with: Qloo official MCP · Dots 3 Note Preview (OpenRouter free selector) · NVIDIA Nemotron 3.5 Super VL (default local runner target) · Supabase · Fastify / Node · Next.js / React Aria Components
 
 **Status: hosted web app, private projects, backend, local runner and a read-only [public sample](https://tastecase.vercel.app/sample).**
 
@@ -82,7 +82,7 @@ flowchart TB
   Web --> Backend["One Node process: API + discovery worker"]
   Backend <--> DB["Postgres: inputs, leases, checkpoints, evidence"]
   Backend --> MCP["Official Qloo MCP child"]
-  Backend --> Model["Free Nemotron 3.5 Super VL: bounded contrast choice"]
+  Backend --> Model["Free Dots 3 Note Preview: bounded contrast choice"]
   Runner["Local project-scoped runner"] <--> Backend
   Runner --> Target["Owner's assistant; credentials stay local"]
 ```
@@ -92,7 +92,8 @@ flowchart TB
 | Tool | Role | Current state |
 |---|---|---|
 | Qloo official MCP | Resolve public anchors, rank the fixed eligible options and explain rankings with affinity, interest influence and place tags | Integrated worker; live rankings, explainability, tags and missing-coverage handling verified; review-card signals checked with synthetic fixtures |
-| OpenRouter / NVIDIA Nemotron 3.5 Super VL (free) | Choose a code-verified contrast; default local runner target | Bounded live pilot completed 2026-10-25; reasoning disabled for this model |
+| OpenRouter / Dots 3 Note Preview (free) | Choose a code-verified contrast | 2026-10-26 selector check, see Evidence |
+| OpenRouter / NVIDIA Nemotron 3.5 Super VL (free) | Default local runner target | Bounded live pilot completed 2026-10-25; reasoning disabled for this model |
 | Supabase | Owner authentication, Postgres and private storage | Dedicated free-plan database, migrations, real owner/RLS and private-object isolation verified |
 | Next.js / React Aria Components | Web workbench, in-app docs and bounded API bridge | Manrope selected; component and local HTTP/database checks pass; real-provider browser journey verified |
 | Fastify / Node | One API/worker process with a Postgres-backed queue | Local startup, readiness, cancellation and restart tests pass |
@@ -100,11 +101,13 @@ flowchart TB
 
 ## What's running
 
-A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com), through `@qloo/qloo-harness@0.1.26`; the current model is `nvidia/nemotron-3.5-super-vl:free` through OpenRouter. Earlier Nemotron 3 Super and Nova Micro evidence below is historical, not verification of this model.
+A dedicated Supabase project holds the private database and Auth/Storage configuration. The frontend is at [tastecase.vercel.app](https://tastecase.vercel.app); the API and discovery worker share [tastecase-api.onrender.com](https://tastecase-api.onrender.com). See the [deployment guide](docs/deployment.md) for exact settings and limitations. Qloo uses its [hackathon API](https://hackathon.api.qloo.com) through `@qloo/qloo-harness@0.1.26`. The discovery selector uses `dots-studio/dots-3-note-preview:free` and the default local runner target is `nvidia/nemotron-3.5-super-vl:free`, both through OpenRouter's free route. Earlier Nemotron selector evidence below is historical and describes a prior selector, not the current Dots selector.
 
 ## Evidence
 
-Bounded discovery pilot on NVIDIA Nemotron 3.5 Super VL (2026-10-25): three Qloo ranking workflows made six HTTP requests, all returning 200, spaced at least 250 ms apart. Twelve free model calls (three guided selections, three generic selections, six target calls) reported $0, with no retries or provider fallbacks. The guided selector chose a case in two of three trials and the generic selector abstained in all three, producing two blinded review cards. Two earlier attempts the same day stopped cleanly: one on a provider `MODEL_UNAVAILABLE`, and one on an empty answer after low-effort reasoning used about 760 of 771 output tokens, which led to disabling reasoning. This shows the pipeline runs on the new model. It doesn't show that the cases are useful.
+Selector model check (2026-10-26): each free model got the same 5 selector requests, using the worker's real request settings, with 1 to 21 code-verified contrasts and partial Qloo coverage. Dots 3 Note Preview returned valid selections 5 of 5 at $0. Xing 4.0 returned 2 of 5, with three HTTP 429s from its single provider. Nemotron 3.5 Super VL returned 2 of 5, with three HTTP 502s. Every valid answer picked the first listed contrast. Dots is a preview model, and one small check is not proof of long-run reliability. The 50-request daily free cap applies to all free models together.
+
+Historical bounded discovery pilot with NVIDIA Nemotron 3.5 Super VL as selector (2026-10-25): three Qloo ranking workflows made six HTTP requests, all returning 200, spaced at least 250 ms apart. Twelve free model calls (three guided selections, three generic selections, six target calls) reported $0, with no retries or provider fallbacks. The guided selector chose a case in two of three trials and the generic selector abstained in all three, producing two blinded review cards. Two earlier attempts the same day stopped cleanly: one on a provider `MODEL_UNAVAILABLE`, and one on an empty answer after low-effort reasoning used about 760 of 771 output tokens, which led to disabling reasoning. This showed the pipeline ran on that model. It doesn't show that the cases are useful.
 
 First card review (2026-10-26): the owner reviewed the seven blinded cards from this run and the 2026-10-20 MiniMax run, and marked all seven useful, four chosen by the guided selector and three by the generic one. The review didn't separate the methods. Its reasons mostly described the assistant's uneven personalization across guests, which every card in a run shared. See the [pilot review](docs/discovery-pilot.md#first-review-2026-10-26) for counts and limits.
 

@@ -103,7 +103,7 @@ export const reference: DocSection = {
           [<code key="h">HOST</code>, 'Bind address; loopback by default.'], [<code key="p">PORT</code>, 'HTTP port.'],
           [<code key="s">SUPABASE_URL</code>, 'Verifies real owner sessions.'], [<code key="a">SUPABASE_ANON_KEY</code>, 'Supabase public key for session verification.'],
           [<code key="ca">NODE_EXTRA_CA_CERTS</code>, 'Path to Supabase’s CA certificate.'], [<code key="cf">DATABASE_SSL_CA_FILE</code>, 'Same certificate for the database client.'],
-          [<code key="q">QLOO_API_KEY</code>, 'Backend-only Qloo credential.'], [<code key="l">OPENROUTER_API_KEY</code>, 'Backend-only free Nemotron 3.5 Super VL decision model credential.'],
+          [<code key="q">QLOO_API_KEY</code>, 'Backend-only Qloo credential.'], [<code key="l">OPENROUTER_API_KEY</code>, 'Backend-only free Dots 3 Note Preview decision model credential.'],
           [<code key="sp">TASTECASE_PUBLIC_SAMPLE_PROJECT_ID</code>, 'Server-only allowlist: dedicated synthetic sample project UUID. No default.'],
           [<code key="sc">TASTECASE_PUBLIC_SAMPLE_CASE_ID</code>, 'Server-only allowlist: recorded case UUID in that project. Never a browser selector.'],
           [<code key="ss">TASTECASE_PUBLIC_SAMPLE_INPUTS_SYNTHETIC</code>, 'Set to true only after reviewing the dedicated inputs as synthetic. All sample settings are required together.'],
