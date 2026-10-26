@@ -166,7 +166,7 @@ test('The decision model uses only computed facts, strict ID-only schema and fre
   const adapter=new OpenRouterDecisionAdapter('synthetic-noncredential',mock);
   assert.equal(JSON.stringify(adapter).includes('synthetic-noncredential'),false);
   assert.equal((await adapter.select(facts,{signal:new AbortController().signal,outputBytes:64000})).selectedContrastId,id);
-  assert.equal(url,'https://openrouter.ai/api/v1/chat/completions'); assert.equal(body.model,'nvidia/nemotron-3.5-super-vl:free'); assert.equal(body.tools,undefined);assert.equal(redirect,'error');
+  assert.equal(url,'https://openrouter.ai/api/v1/chat/completions'); assert.equal(body.model,'dots-studio/dots-3-note-preview:free'); assert.equal(body.tools,undefined);assert.equal(redirect,'error');
   assert.deepEqual(body.provider,{allow_fallbacks:false,require_parameters:true,max_price:{prompt:0,completion:0,request:0}});
   assert.deepEqual(body.reasoning,{enabled:false,exclude:true});
   assert.deepEqual(body.response_format,{type:'json_object'});assert.equal(body.max_tokens,2048);
