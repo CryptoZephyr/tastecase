@@ -104,7 +104,9 @@ A dedicated Supabase project holds the private database and Auth/Storage configu
 
 ## Evidence
 
-Bounded discovery pilot on NVIDIA Nemotron 3.5 Super VL (2026-10-25): three Qloo ranking workflows made six HTTP requests, all returning 200, spaced at least 250 ms apart. Twelve free model calls (three guided selections, three generic selections, six target calls) reported $0, with no retries or provider fallbacks. The guided selector chose a case in two of three trials and the generic selector abstained in all three, producing two blinded review cards that no human has reviewed yet. Two earlier attempts the same day stopped cleanly: one on a provider `MODEL_UNAVAILABLE`, and one on an empty answer after low-effort reasoning used about 760 of 771 output tokens, which led to disabling reasoning. This shows the pipeline runs on the new model. It doesn't show that the cases are useful.
+Bounded discovery pilot on NVIDIA Nemotron 3.5 Super VL (2026-10-25): three Qloo ranking workflows made six HTTP requests, all returning 200, spaced at least 250 ms apart. Twelve free model calls (three guided selections, three generic selections, six target calls) reported $0, with no retries or provider fallbacks. The guided selector chose a case in two of three trials and the generic selector abstained in all three, producing two blinded review cards. Two earlier attempts the same day stopped cleanly: one on a provider `MODEL_UNAVAILABLE`, and one on an empty answer after low-effort reasoning used about 760 of 771 output tokens, which led to disabling reasoning. This shows the pipeline runs on the new model. It doesn't show that the cases are useful.
+
+First card review (2026-10-26): the owner reviewed the seven blinded cards from this run and the 2026-10-20 MiniMax run, and marked all seven useful, four chosen by the guided selector and three by the generic one. The review didn't separate the methods. Its reasons mostly described the assistant's uneven personalization across guests, which every card in a run shared. See the [pilot review](docs/discovery-pilot.md#first-review-2026-10-26) for counts and limits.
 
 Qloo rate-limit fix (2026-10-25): Qloo support reported a 5 requests/second hackathon limit. TasteCase now batches entity lookups, makes at most two HTTP requests per workflow, disables hidden retries and spaces dispatches by 250 ms.
 
@@ -248,14 +250,14 @@ For the bounded Qloo → free model → runner check, see [live discovery verifi
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
 - The hosted real-provider browser journey and a fresh production signup with email confirmation passed. On 2026-10-25 the synthetic API cold start, service restart, queued-comparison cancellation and discovery cancellation were verified. A downloaded comparison pack passed its checksum check and replay made no Qloo calls, but free-model unavailability left three of four baseline and all four candidate replay repeats unavailable. Objective-rule browser failures remain untested.
-- Nobody has reviewed the latest pilot cards yet, so there's no measurement of whether Qloo-guided discovery finds more useful cases than ordinary generation.
+- One owner review of seven pilot cards rated every card from both methods useful, so there's still no evidence that Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## Roadmap
 
 - Verify objective-rule browser failures in the hosted browser journey.
 - Repeat local replay of the downloaded hosted pack when the free model is available.
 - Find the cause of the intermittent hosted `PROVIDER_INVALID_DATA` on Qloo rank steps, and let the local runner keep claiming work after a single target timeout.
-- Measure whether Qloo-guided discovery finds more useful cases than ordinary generation.
+- Measure whether Qloo-guided discovery finds more useful cases than ordinary generation, with pair-specific assistant answers and more than one reviewer.
 
 ## License
 
