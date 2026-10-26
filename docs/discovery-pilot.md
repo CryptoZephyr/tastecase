@@ -26,6 +26,35 @@ Mark **yes** in stage one only if the specific question is worth keeping as a re
 
 After review, compare useful questions **out of attempted cases** for the two new pairings, with calibration shown separately. Also report provider and model call counts, missing/unavailable evidence, repeat consistency, review minutes, rejections, deferrals and whether any human-approved suite tests were actually created. With only two fresh pairings this is an exploratory pilot: report examples and uncertainty, **not a general superiority, user-satisfaction or conversion claim**.
 
+## First review (2026-10-26)
+
+The owner reviewed the seven stage-one cards from the two completed live runs: five from the 2026-10-20 run on `minimax/minimax-m3.1-flash:free` and two from the 2026-10-25 run on `nvidia/nemotron-3.5-super-vl:free`. The cards were rendered from the saved review packets and numbered 1 to 7 without method attribution. All seven decisions were recorded before the key file was opened. Stage two, evidence sufficiency, has not been done, and no suite tests were created from these cards.
+
+All seven cards were marked **yes**, at 2 to 3 minutes each and 18 minutes in total. None was rejected or deferred. No card was shared by both methods.
+
+Useful questions out of attempted cases, where an abstention counts as an attempt with no card:
+
+| Run | Phase | Guided | Generic |
+| --- | --- | --- | --- |
+| 2026-10-20 | Calibration | 1 of 1 | 1 of 1 |
+| 2026-10-20 | New pairings | 1 of 2, one abstention | 2 of 2 |
+| 2026-10-25 | Calibration | 1 of 1 | 0 of 1, abstained |
+| 2026-10-25 | New pairings | 1 of 2, one abstention | 0 of 2, both abstained |
+
+Across both runs, each method scored 2 of 4 on the new pairings. On calibration, guided scored 2 of 2 and generic 1 of 2.
+
+This review doesn't separate the methods. Every card either method produced was judged useful. On Radiohead/The Grand Budapest Hotel, where Qloo found no reversal, the guided selector abstained as designed, and the generic card it skipped (Red Rooster Harlem and Via Carota) was still judged useful.
+
+The reasons were almost all about how the assistant treated each guest, for example generic picks for the Taylor Swift guest and interest-specific ones for the film guest. A packet shows the assistant's attempts per profile, so every card in a run with the same two guests shows the same answers and only the pair changes. The decisions therefore mostly judge the assistant's uneven personalization, which both methods exposed equally, rather than the pair each method picked.
+
+Limits:
+
+- One reviewer, who owns the product.
+- Not fully blind. The reviewer had seen earlier summaries, and the README already said the 2026-10-25 cards came only from the guided selector, which covers cards 6 and 7.
+- Seven cards from two runs on different models. This is an exploratory result, not a superiority claim either way.
+
+A fairer next test would ask the assistant about each pair specifically, so a card's answers depend on the pair being judged, and would use more than one reviewer.
+
 ## Running it locally
 
 The script requires `TASTECASE_BENCHMARK_LIVE=1`, `OPENROUTER_API_KEY`, `TASTECASE_QLOO_FIXTURE_DIRECTORY` pointing at existing confirmed mapping evidence and `TASTECASE_BENCHMARK_OUTPUT_DIRECTORY` pointing to the existing ignored repository `.local` directory. From the repo root run `node --import tsx scripts/benchmark-discovery.ts`. The default **live** mode also requires `QLOO_API_KEY`. The retrospective mode requires `TASTECASE_BENCHMARK_QLOO_SOURCE=historical_recording` instead of a Qloo key and expects the three pre-existing `expanded-rank-*.json` recordings in that same evidence directory. Do not commit the private review packet, source key or local evidence. Importing the script or running its unit tests makes **no provider calls**.
