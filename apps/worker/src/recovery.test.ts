@@ -131,6 +131,25 @@ function captureStderr() {
   return {lines,restore:()=>{console.error=original;}};
 }
 
+test('reduced target briefs use pinned catalog order for both profiles and preserve target constraints and eligibility',async()=>{
+  const f=await fixture({mapped:3});
+  try {
+    const saved=await f.snapshot();
+    const fullA=syntheticTarget(saved.job,'a',0);const fullB=syntheticTarget(saved.job,'b',0);
+    const reducedA=syntheticTarget(saved.job,'a',0,['entry-2','entry-0']);
+    const reducedB=syntheticTarget(saved.job,'b',0,['entry-2','entry-0']);
+    const pairText='Investigate the relative order of catalog IDs entry-0 and entry-2 within the unchanged eligible catalog. They are listed in catalog order, which is not a preference. Do not remove any practical constraint or exclude other eligible options.';
+    assert.ok(reducedA.task.syntheticBrief.text.includes(pairText));
+    assert.ok(reducedB.task.syntheticBrief.text.includes(pairText));
+    for (const [full,reduced] of [[fullA,reducedA],[fullB,reducedB]]) {
+      assert.deepEqual(reduced.task.constraints,full.task.constraints);
+      assert.deepEqual(reduced.input.eligibleCatalogEntryIds,full.input.eligibleCatalogEntryIds);
+      assert.deepEqual(reduced.task.syntheticInterests,full.task.syntheticInterests);
+    }
+    assert.throws(()=>syntheticTarget(saved.job,'a',0,['entry-2','outside']),/Pair outside pinned catalog/);
+  } finally {await f.close();}
+});
+
 test('local PostgreSQL: repeats, restart checkpoints, safe same-pair reduction and immutable reopening',async()=>{
   const f=await fixture(); const fake=syntheticAdapters();
   try {
