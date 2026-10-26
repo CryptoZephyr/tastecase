@@ -113,7 +113,9 @@ First card review (2026-10-26): the owner reviewed the seven blinded cards from 
 
 Qloo rate-limit fix (2026-10-25): Qloo support reported a 5 requests/second hackathon limit. TasteCase now batches entity lookups, makes at most two HTTP requests per workflow, disables hidden retries and spaces dispatches by 250 ms.
 
-Qloo signals on review cards (2026-10-25): a 2-request live probe confirmed explainability and place tags on the hackathon API. The card section was checked with synthetic fixtures at desktop and phone widths. A hosted synthetic discovery run on 2026-10-25 then produced the current public sample: 8 Qloo requests, all HTTP 200, 7 free Nemotron calls and 4 rank evidence rows with affinity and interest influence, plus 108 place tags. One of six assistant attempts timed out and is shown as a gap. Two earlier hosted attempts that day stopped on a Qloo step with `PROVIDER_INVALID_DATA`, and the cause is not yet known. The worker now logs a safe description of that failure.
+Qloo signals on review cards (2026-10-25): a 2-request live probe confirmed explainability and place tags on the hackathon API. The card section was checked with synthetic fixtures at desktop and phone widths. A hosted synthetic discovery run on 2026-10-25 then produced the first public sample with these signals: 8 Qloo requests, all HTTP 200, 7 free Nemotron calls and 4 rank evidence rows with affinity and interest influence, plus 108 place tags. One of six assistant attempts timed out and is shown as a gap. Two earlier hosted attempts that day stopped on a Qloo step with `PROVIDER_INVALID_DATA`, and the cause is not yet known. The worker now logs a safe description of that failure.
+
+Current public sample (2026-10-26): case `9f97ffcd` from an 8-restaurant varied catalog contrasts Dirt Candy and Momofuku Noodle Bar. Its run made 8 Qloo requests, all HTTP 200, and 1 Dots selector call, and all 6 Nemotron answers came back. The owner reviewed and accepted it. The job is `partial` because one catalog restaurant has no Qloo match. Its two follow-up answers came from the wording that listed the pair in profile a's Qloo order, which [PR #22](https://github.com/CryptoZephyr/tastecase/pull/22) changed to catalog order. A rerun after that change timed out on two of the Taylor Swift guest's answers at 120 seconds, and the owner rejected it, so the sample stays on `9f97ffcd`.
 
 <details>
 <summary>Earlier verification (Oct 13 to 14, historical)</summary>
@@ -252,14 +254,13 @@ For the bounded Qloo → free model → runner check, see [live discovery verifi
 - Model prose is not authoritative. Only validated choices and code-computed evidence enter the finding.
 - Provider dispatch and billing are not exactly-once; unknown outcomes stay visible and charged.
 - Comparisons support up to ten explicitly selected cases and only the reviewed declarative rules. Published advisory expectations remain non-automatic. Release labels are local attestations, not proof of model identity; self-checksums are not artifact signatures.
-- The hosted real-provider browser journey and a fresh production signup with email confirmation passed. On 2026-10-25 the synthetic API cold start, service restart, queued-comparison cancellation and discovery cancellation were verified. A downloaded comparison pack passed its checksum check and replay made no Qloo calls, but free-model unavailability left three of four baseline and all four candidate replay repeats unavailable. Objective-rule browser failures remain untested.
+- The hosted real-provider browser journey and a fresh production signup with email confirmation passed. On 2026-10-25 the synthetic API cold start, service restart, queued-comparison cancellation and discovery cancellation were verified. A downloaded comparison pack passed its checksum check and replay made no Qloo calls. The first replay got 1 usable answer of 8 from the free model. A rerun with the runner's bounded retries got 5 of 8, baseline 3 of 4 and candidate 2 of 4, and the rest stayed unavailable after HTTP 502s or 429s. Objective-rule browser failures remain untested.
 - One owner review of seven pilot cards rated every card from both methods useful, so there's still no evidence that Qloo-guided discovery finds more useful cases than ordinary generation.
 
 ## Roadmap
 
 - Verify objective-rule browser failures in the hosted browser journey.
-- Repeat local replay of the downloaded hosted pack when the free model is available.
-- Find the cause of the intermittent hosted `PROVIDER_INVALID_DATA` on Qloo rank steps, and let the local runner keep claiming work after a single target timeout.
+- Find the cause of the intermittent hosted `PROVIDER_INVALID_DATA` on Qloo rank steps, and retry assistant answers that time out during discovery.
 - Measure whether Qloo-guided discovery finds more useful cases than ordinary generation, with pair-specific assistant answers and more than one reviewer.
 
 ## License
