@@ -7,12 +7,20 @@ import type { ScheduledTarget } from './types.js';
 export function syntheticBrief(job: DiscoveryJob, profileId: 'a' | 'b', pair?: [string, string]): SyntheticText {
   const profile = job.input.request.profiles.find(value => value.id === profileId);
   if (!profile) throw new TypeError('Missing pinned profile');
+  let orderedPair: [string, string] | undefined;
+  if (pair) {
+    const entries = job.input.targetInput.catalog.entries;
+    const firstIndex = entries.findIndex(entry => entry.id === pair[0]);
+    const secondIndex = entries.findIndex(entry => entry.id === pair[1]);
+    if (firstIndex < 0 || secondIndex < 0) throw new TypeError('Pair outside pinned catalog');
+    orderedPair = firstIndex <= secondIndex ? pair : [pair[1], pair[0]];
+  }
   return {
     provenance: 'synthetic', label: `Synthetic discovery profile ${profileId}`,
     text: [job.input.targetInput.task.syntheticBrief.text,
       'This is an explicitly fictional test brief, not a real guest history.',
       `Public interests: ${profile.anchors.map(anchor => `${anchor.kind}: ${anchor.label}`).join('; ')}.`,
-      ...(pair ? [`Investigate the relative order of catalog IDs ${pair.join(' and ')} within the unchanged eligible catalog. Do not remove any practical constraint or exclude other eligible options.`] : []),
+      ...(orderedPair ? [`Investigate the relative order of catalog IDs ${orderedPair.join(' and ')} within the unchanged eligible catalog. They are listed in catalog order, which is not a preference. Do not remove any practical constraint or exclude other eligible options.`] : []),
     ].join('\n'),
   };
 }
